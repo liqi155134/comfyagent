@@ -32,16 +32,21 @@ runpodctl v2.9.0 无 logs 命令、GraphQL 无对应字段——只有这套 v2 
 5. GHCR public 镜像 RunPod 直接可拉,无需 registry 凭据;单层压缩后 10GB 上限,模型层压缩率实测 91.2%(20GB 单文件模型必超限)。
 6. RunPod GitHub 构建:30 分钟 docker build 硬上限(smoke 镜像 26m34s 已占 88%)、镜像总量 ≤80GB、构建期无 GPU。
 
-## Model caching(H3 阶段候选架构,2026-08-18 文档核实,未实测)
+## Model caching(H3 阶段候选架构,2026-08-18 已实测打通)
 
-- endpoint 配置 HF 模型路径(如 `Qwen/qwen3-32b-awq`),host 级缓存挂载在
-  `/runpod-volume/huggingface-cache/hub/models--{org}--{name}/snapshots/{hash}/`
-- **模型下载期间不计费**;调度优先落在已有缓存的宿主机;官方称冷启动可到"几秒级"
-- 限制:每 endpoint 一个模型;仅 HF 来源;repo 内多个量化版本会全部下载
+- **API 配置字段(三个公开 API 面均无文档,错误消息探测法逼出)**:GraphQL
+  `saveEndpoint` mutation 的 **`modelName`** 字段(写入侧存在、查询侧不可读;
+  v1/v2 REST 均 422 拒绝同名键)。已实测写入生效。
+- 实测(4090,tiny 模型):worker 环境里被自动注入 **`MODEL_NAME`** 与
+  **`MODEL_REVISION`**(snapshot commit hash)两个 env;整个 HF repo 下载到
+  `/runpod-volume/huggingface-cache/hub/models--{org}--{name}/snapshots/{MODEL_REVISION}/`
+  —— 启动脚本可直接用这两个 env 拼出确定性路径,不需要读 `refs/main`。
+- **模型下载期间不计费**;调度优先落在已有缓存的宿主机
+- 限制:每 endpoint 一个模型(= 一个 HF repo,repo 内多文件都会下);仅 HF 来源
 - **对 H3 的意义**:镜像只装 ComfyUI 环境(~7GB),40GB 权重传自建 HF repo 走缓存
   → 同时绕开 GHCR 10GB 层上限与 GitHub 构建 30 分钟上限,改 handler 不再动模型分发
-- 代价:ComfyUI 需把 HF 缓存路径接进 models 目录(`extra_model_paths.yaml` 或启动时按 snapshot hash symlink)
-- 待实测:snapshot 路径解析、gated model token、真实冷启动数字
+- 代价:ComfyUI 需把缓存路径接进 models 目录(启动时按 `MODEL_NAME`/`MODEL_REVISION` symlink)
+- 待实测:40GB 级真实下载耗时、gated model 的 token 传递方式
 
 ## 实测数字(H100 = ADA_80_PRO 档位,$4.79/hr)
 
