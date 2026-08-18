@@ -48,17 +48,27 @@ runpodctl v2.9.0 无 logs 命令、GraphQL 无对应字段——只有这套 v2 
 - 代价:ComfyUI 需把缓存路径接进 models 目录(启动时按 `MODEL_NAME`/`MODEL_REVISION` symlink)
 - 待实测:40GB 级真实下载耗时、gated model 的 token 传递方式
 
-## 实测数字(H100 = ADA_80_PRO 档位,$4.79/hr)
+## 实测数字(H100 = ADA_80_PRO 档位,$4.79/hr,2026-08-18)
 
-| 场景 | 冷启动 delay |
+| 场景 | delay |
 |---|---|
 | CPU + Docker Hub 小镜像 | 4.6s |
 | H100 + Docker Hub 小镜像(首拉) | 60s |
 | H100 + GHCR 200MB(首拉) | 80s |
-| H100 + GHCR 14GB(宿主机已有镜像缓存) | **27s** |
-| H100 + GHCR 14GB(首拉,推算) | ~4 min(≈58MB/s) |
+| H100 + GHCR 14GB(宿主机已有镜像缓存) | 27s |
+| H100 + GHCR 14GB(首拉,含容量等待/throttle,两次实测一致) | **~10 min**(615s / 590s) |
+| H100 + FlashBoot 热启动(同 endpoint 连续请求) | **0.9s** |
+
+execution(SDXL Turbo 512² 1 步):冷 13.4s(含 6.94GB checkpoint 首载)/ 热 **2.0s**;
+热启动端到端(CLI 提交→出图→下载到本地)墙钟 6.6s。
+
+启动命令:**空启动命令(镜像 CMD)与显式 dockerStartCmd 均实测可用**;
+此前 worker 全部卡死的唯一根因是 start.sh 内联 python 的引号事故,与启动命令形态无关。
+规范仍建议显式 dockerStartCmd(不赌平台对空命令的处理,且它是免重建诊断的入口)。
 
 smoke 镜像:14.08GB / 最大单层 6.33GB / GHA 构建 26m34s。
+A/B/C 三组实验(两次 10 分钟冷启动 + 3 张图 + model caching 探测)合计消耗 **$0.14**
+—— RunPod 对冷启动/排队时段基本不计费,只计 running 秒数。
 
 ## 官方 agent 工具(2026-08 文档,未接入)
 
