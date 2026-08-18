@@ -14,7 +14,11 @@ PATH = Path.home() / ".config" / "comfyagent" / "endpoints.json"
 def load():
     if not PATH.exists():
         return {}
-    return json.loads(PATH.read_text(encoding="utf-8"))
+    data = json.loads(PATH.read_text(encoding="utf-8"))
+    # 手写短格式 "name": "endpoint_id" 归一化成完整条目,
+    # 消费方(set_endpoint / resolve / CLI)一律只面对 dict。
+    return {name: entry if isinstance(entry, dict) else {"endpoint_id": entry}
+            for name, entry in data.items()}
 
 
 def save(data):
