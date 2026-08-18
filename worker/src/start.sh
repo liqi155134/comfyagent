@@ -9,25 +9,11 @@ export LD_PRELOAD="${TCMALLOC}"
 # Verify that the GPU is accessible before starting ComfyUI. If PyTorch
 # cannot initialize CUDA the worker will never be able to process jobs,
 # so we fail fast with an actionable error message.
+# 预检逻辑在 /gpu_check.py(独立文件,不内联 —— 内联 python 的注释里一个
+# 双引号就切断过 bash 字符串,把整个 endpoint 送进 crash loop)。
 # ---------------------------------------------------------------------------
 echo "worker-comfyui: Checking GPU availability..."
-if ! GPU_CHECK=$(python -c "
-import torch
-try:
-    torch.cuda.init()
-    name = torch.cuda.get_device_name(0)
-    cap = torch.cuda.get_device_capability(0)
-    # 必须真的 launch 一个 kernel。上面那些只碰驱动的调用,在「这个 torch 构建
-    # 没有该架构编译 kernel」时(例:旧 torch 撞新卡)照样返回成功 —— 于是 worker
-    # 正常起来、ComfyUI 在第一次 GPU 运算时死掉,最后表现为和真实原因毫无关系的
-    # "server not reachable"。在这里炸掉,原因是明确的。
-    _ = (torch.zeros(8, device='cuda') + 1).sum().item()
-    torch.cuda.synchronize()
-    print(f'OK: {name} (sm_{cap[0]}{cap[1]}), torch {torch.__version__}, cuda {torch.version.cuda}')
-except Exception as e:
-    print(f'FAIL: {e}')
-    exit(1)
-" 2>&1); then
+if ! GPU_CHECK=$(python /gpu_check.py 2>&1); then
     echo "worker-comfyui: GPU is not available or incompatible with this PyTorch build:"
     echo "worker-comfyui: $GPU_CHECK"
     echo "worker-comfyui: 'no kernel image is available' 说明这个 torch 构建缺少该 GPU 架构的 kernel;"

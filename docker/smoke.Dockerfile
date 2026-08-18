@@ -130,8 +130,16 @@ COPY --from=downloader /comfyui/models /comfyui/models
 WORKDIR /
 COPY worker/handler.py /handler.py
 COPY worker/src/start.sh /start.sh
+COPY worker/src/gpu_check.py /gpu_check.py
 COPY worker/scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
 RUN chmod +x /start.sh /usr/local/bin/comfy-node-install
+
+# 启动路径的构建期断言:start.sh 是 CMD,构建期从来不会执行它 ——
+# 里面的语法错误(以及它调用的 python 文件的语法错误)会以「线上 worker
+# 无限 crash loop、job 永远排队」的形态出现,而不是构建失败。在这里钉死。
+RUN bash -n /start.sh \
+    && python -m py_compile /gpu_check.py /handler.py \
+    && echo "start path syntax OK"
 
 # 末层瘦身:strip C 扩展调试符号 + 清 __pycache__,省几百 MB。
 # 镜像每小一点,撞到新宿主机时的冷启动税就少一点。
