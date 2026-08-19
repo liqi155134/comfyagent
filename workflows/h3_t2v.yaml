@@ -23,8 +23,8 @@ params:
     type: number
     default: 5
     min: 1
-    max: 10
-    description: 目标时长(秒),按 24fps 折算;实际帧数会对齐到模型合法值。
+    max: 15
+    description: 目标时长(秒),按 24fps 折算;实际帧数会对齐到模型合法值。官方默认 5s,>10s 属探索区。
   aspect_ratio:
     type: string
     default: "16:9 (Widescreen)"
