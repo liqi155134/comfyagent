@@ -1,0 +1,93 @@
+name: bake full image to Docker Hub
+
+# 路线 C:模型烤进全量镜像(~53GB)推 Docker Hub。
+# 动机:RunPod 拉镜像发生在 initializing 阶段 —— 不计费;Docker Hub 没有
+# GHCR 的 10GB 单层上限。
+#
+# 构建方式不是 docker build:GHA runner 磁盘(清理后 ~60GB)装不下
+# "44GB 模型 + 53GB 镜像层" 两份。改用 crane 把模型逐文件追加为镜像层:
+#   基底 = GHCR 的 h3 环境镜像 → 每轮 下载一个文件 → tar+pigz 成层
+#   → crane append 推送 → 删本地 → 下一个。磁盘峰值 = 最大单文件的
+#   两份(21GB 下载 + ~19GB 压缩层)≈ 40GB,免费 runner 扛得住。
+#
+# 需要 secrets:DOCKERHUB_USERNAME / DOCKERHUB_TOKEN(Read & Write)。
+on:
+  workflow_dispatch:
+    inputs:
+      base_image:
+        description: "基底环境镜像"
+        required: false
+        type: string
+        default: "ghcr.io/liqi155134/comfyagent:h3-4"
+      target:
+        description: "目标 Docker Hub 镜像(默认 <user>/comfyagent-h3:full-<run>)"
+        required: false
+        type: string
+
+jobs:
+  bake:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Free disk space
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: Install crane + pigz + hf
+        run: |
+          curl -sL "https://github.com/google/go-containerregistry/releases/latest/download/go-containerregistry_Linux_x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin crane
+          sudo apt-get install -y -q pigz > /dev/null
+          pip -q install "huggingface_hub[hf_transfer]"
+          crane version
+
+      - name: Bake layers
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          BASE: ${{ inputs.base_image }}
+          TARGET: ${{ inputs.target }}
+          HF_HUB_ENABLE_HF_TRANSFER: "1"
+        run: |
+          set -euo pipefail
+          [ -z "$TARGET" ] && TARGET="${DOCKERHUB_USERNAME}/comfyagent-h3:full-${{ github.run_number }}"
+          echo "$DOCKERHUB_TOKEN" | crane auth login index.docker.io -u "$DOCKERHUB_USERNAME" --password-stdin
+
+          REPO=LIQI5134/minimax-h3-t2v
+          FILES="diffusion_models/minimax_h3_fl2va_pruned_int8_convrot.safetensors \
+                 text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors \
+                 vae/minimax_h3_video_vae_fp16.safetensors \
+                 vae/minimax_h3_audio_vae_fp32.safetensors \
+                 loras/minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16.safetensors"
+
+          CURRENT="$BASE"
+          for f in $FILES; do
+            echo "::group::layer $f"
+            rm -rf stage layer.tgz && mkdir -p "stage/comfyui/models/$(dirname "$f")"
+            python -c "
+          from huggingface_hub import hf_hub_download
+          hf_hub_download('$REPO', '$f', local_dir='stage/comfyui/models')"
+            find stage -name '.cache' -type d -exec rm -rf {} + 2>/dev/null || true
+            tar -C stage -cf - comfyui | pigz -1 > layer.tgz
+            ls -lh layer.tgz; df -h / | tail -1
+            crane append -b "$CURRENT" -f layer.tgz -t "$TARGET"
+            CURRENT="$TARGET"
+            rm -rf stage layer.tgz
+            echo "::endgroup::"
+          done
+
+          echo "### 全量镜像: \`$TARGET\`" >> $GITHUB_STEP_SUMMARY
+          crane manifest "$TARGET" | python3 -c "
+          import json,sys
+          m=json.load(sys.stdin)
+          total=sum(l['size'] for l in m['layers'])
+          big=max(l['size'] for l in m['layers'])
+          print(f'- 层数: {len(m[\"layers\"])}')
+          print(f'- 压缩总大小: {total/1e9:.1f} GB')
+          print(f'- 最大单层: {big/1e9:.1f} GB')" >> $GITHUB_STEP_SUMMARY
