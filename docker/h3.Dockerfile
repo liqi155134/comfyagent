@@ -78,8 +78,11 @@ ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1
 
+# gcc 不是可选项:triton 在推理期 JIT 编译 kernel(H3 量化算子路径)需要
+# 宿主 C 编译器,缺了会在第一次采样时报 "Failed to find C compiler"(实测)。
 RUN apt-get update && apt-get install -y --no-install-recommends \
       git wget ca-certificates \
+      build-essential \
       libgl1 libglib2.0-0 libsm6 libxext6 libxrender1 \
       ffmpeg \
     && apt-get autoremove -y && apt-get clean -y && rm -rf /var/lib/apt/lists/*
