@@ -97,9 +97,9 @@ def cmd_list(args):
 def cmd_run(args, workflow, given):
     client = RunpodClient()
     endpoint_id = config.resolve(workflow.endpoint)
-    graph, resolved = workflow.build(given)
+    payload, resolved = workflow.build_payload(given)
 
-    job_id = client.submit(endpoint_id, {"workflow": graph})
+    job_id = client.submit(endpoint_id, payload)
     store.record(job_id, workflow.id, endpoint_id, resolved)
 
     result = {"job_id": job_id, "workflow": workflow.id, "status": "queued",

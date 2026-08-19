@@ -1,0 +1,54 @@
+# MiniMax H3 图生视频(首帧驱动,音视频联合生成,输出 mp4 含音轨)。
+# 与 h3_t2v 共用同一套模型(unet/clip/双 VAE/LoRA),仅多一个首帧输入。
+id: h3_i2v
+title: MiniMax H3 图生视频
+description: >
+  MiniMax H3 图生视频:以一张输入图为首帧生成带音频的视频。
+  prompt 描述后续运动/运镜/音频,场景设定应与输入图一致(否则画面会突变)。
+  默认 20 步原生质量;enable_lora=true 切换 8 步 Lightning LoRA 加速。
+  输出分辨率由 aspect_ratio + megapixels 推导,与输入图宽高比不一致时会裁切/适配,
+  建议按输入图就近选择。
+
+template: h3_i2v.json
+
+endpoint: h3
+
+params:
+  image:
+    type: image
+    required: true
+    description: >
+      首帧图片的本地文件路径(png/jpg/jpeg/webp)。提交时自动上传到 worker。
+  prompt:
+    type: string
+    required: true
+    description: >
+      视频内容描述。支持分镜脚本式写法(镜头时间轴、运镜、音频提示),
+      英文效果更稳;场景描述须与输入图一致,避免要求文字/字幕/logo。
+  duration:
+    type: number
+    default: 5
+    min: 1
+    max: 15
+    description: 目标时长(秒),按 24fps 折算;实际帧数会对齐到模型合法值。官方默认 5s,>10s 属探索区。
+  aspect_ratio:
+    type: string
+    default: "16:9 (Widescreen)"
+    enum: ["1:1 (Square)", "2:3 (Portrait Photo)", "3:2 (Photo)",
+           "3:4 (Portrait Standard)", "4:3 (Standard)",
+           "9:16 (Portrait Widescreen)", "16:9 (Widescreen)", "21:9 (Ultrawide)"]
+    description: 画幅比例(值必须与 ComfyUI 枚举完全一致);建议与输入图宽高比就近匹配。
+  megapixels:
+    type: number
+    default: 0.4
+    min: 0.2
+    max: 1.0
+    description: 分辨率预算(百万像素)。0.4 是官方工作流默认,越高越慢。
+  enable_lora:
+    type: boolean
+    default: false
+    description: true = 8 步 Lightning LoRA 加速;false = 20 步原生质量。
+  seed:
+    type: integer
+    default: null
+    description: 省略则随机。复现历史产物时必须显式传入。

@@ -96,13 +96,13 @@ def run_workflow(workflow_id: str, params: dict, wait_seconds: int = 0) -> str:
                           ensure_ascii=False)
     wf = wfs[workflow_id]
     try:
-        graph, resolved = wf.build(params or {})
+        payload, resolved = wf.build_payload(params or {})
     except Exception as e:
         return json.dumps({"error": str(e)}, ensure_ascii=False)
 
     endpoint_id = config.resolve(wf.endpoint)
     client = RunpodClient()
-    job_id = client.submit(endpoint_id, {"workflow": graph})
+    job_id = client.submit(endpoint_id, payload)
     store.record(job_id, wf.id, endpoint_id, json.dumps(resolved, ensure_ascii=False))
 
     result = {"job_id": job_id, "workflow": wf.id, "params": resolved, "status": "queued"}

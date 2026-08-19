@@ -7,6 +7,8 @@
 所以每条消息都要说清「哪个参数、什么问题、允许什么」,不能只说 invalid。
 """
 
+import base64
+import hashlib
 import json
 import random
 from dataclasses import dataclass, field
@@ -36,7 +38,10 @@ class ParamSpec:
     min: float | None = None
     max: float | None = None
 
-    _PY = {"string": str, "integer": int, "number": (int, float), "boolean": bool}
+    _PY = {"string": str, "integer": int, "number": (int, float), "boolean": bool,
+           "image": str}
+
+    _IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".webp"}
 
     def coerce(self, value):
         want = self._PY.get(self.type)
@@ -66,6 +71,14 @@ class ParamSpec:
             raise ParamError(f"参数 {self.name} 不能小于 {self.min},收到 {value}")
         if self.max is not None and value > self.max:
             raise ParamError(f"参数 {self.name} 不能大于 {self.max},收到 {value}")
+        if self.type == "image":
+            path = Path(value).expanduser()
+            if not path.is_file():
+                raise ParamError(f"参数 {self.name} 指向的图片不存在: {value}")
+            if path.suffix.lower() not in self._IMAGE_EXTS:
+                raise ParamError(
+                    f"参数 {self.name} 只接受 {sorted(self._IMAGE_EXTS)} 格式,收到 {path.suffix!r}"
+                )
         return value
 
 
@@ -82,10 +95,15 @@ class Workflow:
         return json.loads(self.template_path.read_text(encoding="utf-8"))
 
     def build(self, given):
+        """兼容旧签名:返回 (workflow_dict, resolved_params)。提交请用 build_payload。"""
+        graph, resolved, _ = self._build_full(given)
+        return graph, resolved
+
+    def _build_full(self, given):
         """校验参数、填默认值、渲染出可直接提交的节点图。
 
-        返回 (workflow_dict, resolved_params) —— resolved_params 要落进任务记录,
-        否则「同 seed 复现」就无从谈起。
+        返回 (workflow_dict, resolved_params, images) —— resolved_params 要落进
+        任务记录,否则「同 seed 复现」就无从谈起。
         """
         unknown = set(given) - set(self.params)
         if unknown:
@@ -107,7 +125,28 @@ class Workflow:
             else:
                 resolved[name] = None
 
-        return render(self.template(), resolved), resolved
+        # image 参数:节点图里渲染成内容 hash 文件名(worker 端上传后的引用名,
+        # 避开中文/空格路径的编码问题,同图天然同名),字节以 base64 随 payload 上行。
+        render_params = dict(resolved)
+        images = []
+        for name, spec in self.params.items():
+            if spec.type == "image" and resolved.get(name):
+                path = Path(resolved[name]).expanduser()
+                data = path.read_bytes()
+                fname = hashlib.sha1(data).hexdigest()[:16] + path.suffix.lower()
+                images.append({"name": fname,
+                               "image": base64.b64encode(data).decode()})
+                render_params[name] = fname
+
+        return render(self.template(), render_params), resolved, images
+
+    def build_payload(self, given):
+        """build 的提交侧封装:直接给出可发往 RunPod 的 input payload。"""
+        graph, resolved, images = self._build_full(given)
+        payload = {"workflow": graph}
+        if images:
+            payload["images"] = images
+        return payload, resolved
 
 
 def load_workflows(directory):

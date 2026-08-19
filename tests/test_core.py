@@ -1,6 +1,8 @@
 """核心逻辑的回归测试:参数渲染与工作流声明校验。"""
 
+import base64
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -85,3 +87,40 @@ class TestRegistry(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class TestImageParam(unittest.TestCase):
+    def setUp(self):
+        self.wfs = load_workflows(ROOT / "workflows")
+        self.img = Path(self.enterContext(tempfile.TemporaryDirectory())) / "frame.png"
+        # 最小合法 PNG(1x1)
+        self.img.write_bytes(base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNg"
+            "YGBgAAAABQABh6FO1AAAAABJRU5ErkJggg=="))
+
+    def test_payload_carries_upload(self):
+        payload, resolved = self.wfs["h3_i2v"].build_payload(
+            {"image": str(self.img), "prompt": "x"})
+        self.assertEqual(len(payload["images"]), 1)
+        up = payload["images"][0]
+        self.assertTrue(up["name"].endswith(".png"))
+        self.assertEqual(base64.b64decode(up["image"]), self.img.read_bytes())
+        # 节点图里 LoadImage 引用的是上传名而不是本地路径
+        self.assertEqual(payload["workflow"]["114"]["inputs"]["image"], up["name"])
+        # 任务记录里保留本地路径,供复现
+        self.assertEqual(resolved["image"], str(self.img))
+
+    def test_missing_file_is_param_error(self):
+        with self.assertRaises(ParamError) as cm:
+            self.wfs["h3_i2v"].build_payload({"image": "/no/such.png", "prompt": "x"})
+        self.assertIn("不存在", str(cm.exception))
+
+    def test_bad_extension(self):
+        bad = self.img.with_suffix(".txt")
+        bad.write_bytes(b"nope")
+        with self.assertRaises(ParamError):
+            self.wfs["h3_i2v"].build_payload({"image": str(bad), "prompt": "x"})
+
+    def test_non_image_workflow_payload_has_no_images_key(self):
+        payload, _ = self.wfs["sdxl_turbo"].build_payload({"prompt": "cat"})
+        self.assertNotIn("images", payload)
