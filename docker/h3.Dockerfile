@@ -56,7 +56,7 @@ RUN git clone --depth 1 --branch "${SAGE_REF}" \
       https://github.com/thu-ml/SageAttention.git /sage \
     && cd /sage \
     && TORCH_CUDA_ARCH_LIST="${SAGE_CUDA_ARCHS}" \
-       EXT_PARALLEL=4 NVCC_APPEND_FLAGS="--threads 8" MAX_JOBS=8 \
+       MAX_JOBS=2 NVCC_APPEND_FLAGS="--threads 2" \
        python setup.py bdist_wheel \
     && ls -lh /sage/dist/
 
