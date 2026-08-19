@@ -22,10 +22,39 @@ if ! GPU_CHECK=$(python /gpu_check.py 2>&1); then
 fi
 echo "worker-comfyui: GPU available — $GPU_CHECK"
 
+# ---------------------------------------------------------------------------
+# Model caching(RunPod):endpoint 配了 modelName 时,平台把整个 HF repo
+# 下载到缓存卷并注入 MODEL_NAME / MODEL_REVISION 两个 env(实测,2026-08)。
+# 转存 repo 的子目录结构与 ComfyUI models 目录一一对应,逐目录 symlink。
+# 没配 model caching(如 smoke 镜像)时整块跳过,零影响。
+# ---------------------------------------------------------------------------
+if [ -n "$MODEL_NAME" ] && [ -n "$MODEL_REVISION" ]; then
+    SNAP="/runpod-volume/huggingface-cache/hub/models--${MODEL_NAME//\//--}/snapshots/${MODEL_REVISION}"
+    if [ -d "$SNAP" ]; then
+        echo "worker-comfyui: Linking cached model files from $SNAP"
+        for sub in diffusion_models text_encoders vae loras checkpoints clip_vision; do
+            if [ -d "$SNAP/$sub" ]; then
+                mkdir -p "/comfyui/models/$sub"
+                ln -sfn "$SNAP/$sub"/* "/comfyui/models/$sub/"
+                echo "worker-comfyui:   models/$sub <- $(ls "$SNAP/$sub" | tr '\n' ' ')"
+            fi
+        done
+    else
+        echo "worker-comfyui: WARNING: MODEL_NAME=$MODEL_NAME set but snapshot dir missing: $SNAP"
+    fi
+fi
+
 echo "worker-comfyui: Starting ComfyUI"
 
 # Allow operators to tweak verbosity; default is WARNING.
 : "${COMFY_LOG_LEVEL:=WARNING}"
+
+# SageAttention 按 env 开关(h3 模板置 true;镜像里没装 sage 时不要开)
+COMFY_EXTRA_ARGS=""
+if [ "$USE_SAGE_ATTENTION" = "true" ]; then
+    COMFY_EXTRA_ARGS="--use-sage-attention"
+    echo "worker-comfyui: SageAttention enabled"
+fi
 
 # PID file used by the handler to detect if ComfyUI is still running
 COMFY_PID_FILE="/tmp/comfyui.pid"
@@ -33,14 +62,14 @@ COMFY_PID_FILE="/tmp/comfyui.pid"
 # Serve the API and don't shutdown the container
 if [ "$SERVE_API_LOCALLY" == "true" ]; then
     python -u /comfyui/main.py --disable-auto-launch --disable-metadata --listen \
-        --use-pytorch-cross-attention --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+        --verbose "${COMFY_LOG_LEVEL}" --log-stdout ${COMFY_EXTRA_ARGS} &
     echo $! > "$COMFY_PID_FILE"
 
     echo "worker-comfyui: Starting RunPod Handler"
     python -u /handler.py --rp_serve_api --rp_api_host=0.0.0.0
 else
     python -u /comfyui/main.py --disable-auto-launch --disable-metadata \
-        --use-pytorch-cross-attention --verbose "${COMFY_LOG_LEVEL}" --log-stdout &
+        --verbose "${COMFY_LOG_LEVEL}" --log-stdout ${COMFY_EXTRA_ARGS} &
     echo $! > "$COMFY_PID_FILE"
 
     echo "worker-comfyui: Starting RunPod Handler"

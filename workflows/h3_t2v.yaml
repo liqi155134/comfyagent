@@ -1,0 +1,48 @@
+# MiniMax H3 文生视频(音视频联合生成,输出 mp4 含音轨)。
+# 工作流来源:用户提供的 ComfyUI 导出(API 格式),模型为官方 int8/nvfp4 量化版。
+id: h3_t2v
+title: MiniMax H3 文生视频
+description: >
+  MiniMax H3 文生视频,自带音频。默认 20 步原生质量;enable_lora=true 切换
+  8 步 Lightning LoRA 加速(同一模型加载 LoRA,速度约 2.5x,质量略降)。
+  分辨率由 aspect_ratio + megapixels 推导(0.4MP ≈ 848x480 宽屏),
+  时长按 24fps 折算成合法帧数(17 的倍数对齐,模型约束)。
+
+template: h3_t2v.json
+
+endpoint: h3
+
+params:
+  prompt:
+    type: string
+    required: true
+    description: >
+      视频内容描述。支持分镜脚本式写法(镜头时间轴、运镜、音频提示),
+      英文效果更稳;避免要求文字/字幕/logo。
+  duration:
+    type: number
+    default: 5
+    min: 1
+    max: 10
+    description: 目标时长(秒),按 24fps 折算;实际帧数会对齐到模型合法值。
+  aspect_ratio:
+    type: string
+    default: "16:9 (Widescreen)"
+    enum: ["1:1 (Square)", "2:3 (Portrait Photo)", "3:2 (Photo)",
+           "3:4 (Portrait Standard)", "4:3 (Standard)",
+           "9:16 (Portrait Widescreen)", "16:9 (Widescreen)", "21:9 (Ultrawide)"]
+    description: 画幅比例(值必须与 ComfyUI 枚举完全一致)。
+  megapixels:
+    type: number
+    default: 0.4
+    min: 0.2
+    max: 1.0
+    description: 分辨率预算(百万像素)。0.4 是官方工作流默认,越高越慢。
+  enable_lora:
+    type: boolean
+    default: false
+    description: true = 8 步 Lightning LoRA 加速;false = 20 步原生质量。
+  seed:
+    type: integer
+    default: null
+    description: 省略则随机。复现历史产物时必须显式传入。
