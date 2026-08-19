@@ -45,6 +45,9 @@ _CONTENT_TYPE_BY_EXT = {
     ".webp": "image/webp",
     ".gif": "image/gif",
     ".bmp": "image/bmp",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".webp": "image/webp",
 }
 
 
