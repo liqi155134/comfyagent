@@ -47,7 +47,7 @@ def _save_outputs(outputs, directory):
         kind = item.get("type")
         if kind == "base64":
             target.write_bytes(base64.b64decode(item["data"]))
-        elif kind in ("s3_url", "url"):
+        elif kind in ("s3_url", "url", "r2_url"):
             with urllib.request.urlopen(item["data"], timeout=300) as r:
                 target.write_bytes(r.read())
         else:
