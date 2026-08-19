@@ -118,12 +118,13 @@ cu = tuple(map(int, str(torch.version.cuda).split('.'))); \
 assert cu >= (13,), f'CUDA 构建不是 cu13: {torch.version.cuda} —— comfy-kitchen CUDA 后端会被禁用'; \
 assert importlib.util.find_spec('sageattention') is not None, 'sageattention 没装上'; \
 assert importlib.util.find_spec('xformers') is None, 'xformers 溜回来了'; \
-import comfy_kitchen as ck; \
+import comfy_kitchen; \
+import importlib.metadata as md; \
 import transformers, huggingface_hub; \
 assert int(transformers.__version__.split('.')[0]) < 5; \
 assert int(huggingface_hub.__version__.split('.')[0]) < 1; \
 print('OK torch', torch.__version__, '| cuda', torch.version.cuda, \
-      '| comfy_kitchen', ck.__version__, '| transformers', transformers.__version__)"
+      '| comfy_kitchen', md.version('comfy-kitchen'), '| transformers', transformers.__version__)"
 
 # 构建期冒烟:CPU 起一次 ComfyUI 完整节点图(不带 sage,sage 需要 GPU)。
 RUN cd /comfyui && timeout 300 python main.py --quick-test-for-ci --cpu
