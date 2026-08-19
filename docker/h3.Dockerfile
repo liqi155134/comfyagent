@@ -21,7 +21,7 @@ ARG TORCH_VERSION=2.13.0
 # out tensor 写结果却没声明 mutates_args,torch functionalization 把写入当
 # dead store 丢弃,H100 上输出规则网格马赛克且日志全绿(上游 #288/#320,
 # 本项目与 Modal 侧各自踩过一次)。pin 到 2025-12-22 之后的 main commit。
-ARG SAGE_REF=d1a57a546c3d
+ARG SAGE_REF=d1a57a546c3d395b1ffcbeecc66d81db76f3b4b5
 ARG PYTHON_VERSION=3.12
 # H100/H200 都是 sm90;要兼容 4090/L40S 再加 "8.9"
 ARG SAGE_CUDA_ARCHS=9.0
