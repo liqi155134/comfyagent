@@ -238,6 +238,11 @@ def main(argv=None):
                     kw["type"] = int
                 elif spec.type == "number":
                     kw["type"] = float
+                elif spec.type == "boolean":
+                    # agent 会传 --xx true/false 字符串;这里转成真 bool,
+                    # coerce 层保持严格(API 直调时不吞类型错误)。
+                    kw["type"] = lambda s: s.lower() in ("true", "1", "yes")
+                    kw["metavar"] = "true|false"
                 if spec.enum:
                     kw["choices"] = spec.enum
                 sub_run.add_argument(f"--{name.replace('_', '-')}", **kw)
