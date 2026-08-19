@@ -17,7 +17,11 @@
 ARG CUDA_IMAGE_TAG=13.0.1
 ARG COMFYUI_REF=v0.33.1
 ARG TORCH_VERSION=2.13.0
-ARG SAGE_REF=v2.2.0
+# ⚠️ 不要用 v2.2.0 tag:它带着 PR #218 的 sm90 wrapper bug —— custom op 往
+# out tensor 写结果却没声明 mutates_args,torch functionalization 把写入当
+# dead store 丢弃,H100 上输出规则网格马赛克且日志全绿(上游 #288/#320,
+# 本项目与 Modal 侧各自踩过一次)。pin 到 2025-12-22 之后的 main commit。
+ARG SAGE_REF=d1a57a546c3d
 ARG PYTHON_VERSION=3.12
 # H100/H200 都是 sm90;要兼容 4090/L40S 再加 "8.9"
 ARG SAGE_CUDA_ARCHS=9.0
@@ -52,9 +56,10 @@ RUN uv pip install --no-cache "torch==${TORCH_VERSION}" setuptools wheel ninja
 
 # 交叉编译:无 GPU 环境必须显式给 TORCH_CUDA_ARCH_LIST,
 # 否则 setup.py 会尝试探测本机 GPU 然后失败。
-RUN git clone --depth 1 --branch "${SAGE_REF}" \
-      https://github.com/thu-ml/SageAttention.git /sage \
-    && cd /sage \
+RUN mkdir /sage && cd /sage \
+    && git init -q && git remote add origin https://github.com/thu-ml/SageAttention.git \
+    && git fetch -q --depth 1 origin "${SAGE_REF}" \
+    && git checkout -q FETCH_HEAD \
     && TORCH_CUDA_ARCH_LIST="${SAGE_CUDA_ARCHS}" \
        MAX_JOBS=2 NVCC_APPEND_FLAGS="--threads 2" \
        python setup.py bdist_wheel \
