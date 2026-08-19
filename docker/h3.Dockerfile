@@ -106,7 +106,7 @@ RUN git clone --depth 1 --branch "${COMFYUI_REF}" \
 
 # handler 运行期依赖 + sage wheel
 COPY --from=sage-builder /sage/dist/*.whl /tmp/wheels/
-RUN uv pip install --no-cache runpod requests websocket-client boto3 /tmp/wheels/*.whl \
+RUN uv pip install --no-cache runpod requests websocket-client boto3 hf_transfer /tmp/wheels/*.whl \
     && rm -rf /tmp/wheels
 
 # 构建期断言:cu13 / comfy-kitchen CUDA 后端未被禁 / sage 可导入。
@@ -133,12 +133,13 @@ WORKDIR /
 COPY worker/handler.py /handler.py
 COPY worker/src/start.sh /start.sh
 COPY worker/src/gpu_check.py /gpu_check.py
+COPY worker/src/fetch_models.py /fetch_models.py
 COPY worker/scripts/comfy-node-install.sh /usr/local/bin/comfy-node-install
 RUN chmod +x /start.sh /usr/local/bin/comfy-node-install
 
 # 启动路径构建期断言(理由见 smoke.Dockerfile)
 RUN bash -n /start.sh \
-    && python -m py_compile /gpu_check.py /handler.py \
+    && python -m py_compile /gpu_check.py /fetch_models.py /handler.py \
     && echo "start path syntax OK"
 
 RUN find /opt/venv /comfyui -depth -type d -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true \

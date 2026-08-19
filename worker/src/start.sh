@@ -28,6 +28,7 @@ echo "worker-comfyui: GPU available — $GPU_CHECK"
 # 转存 repo 的子目录结构与 ComfyUI models 目录一一对应,逐目录 symlink。
 # 没配 model caching(如 smoke 镜像)时整块跳过,零影响。
 # ---------------------------------------------------------------------------
+MODELS_LINKED=0
 if [ -n "$MODEL_NAME" ] && [ -n "$MODEL_REVISION" ]; then
     SNAP="/runpod-volume/huggingface-cache/hub/models--${MODEL_NAME//\//--}/snapshots/${MODEL_REVISION}"
     if [ -d "$SNAP" ]; then
@@ -39,8 +40,19 @@ if [ -n "$MODEL_NAME" ] && [ -n "$MODEL_REVISION" ]; then
                 echo "worker-comfyui:   models/$sub <- $(ls "$SNAP/$sub" | tr '\n' ' ')"
             fi
         done
+        MODELS_LINKED=1
     else
         echo "worker-comfyui: WARNING: MODEL_NAME=$MODEL_NAME set but snapshot dir missing: $SNAP"
+    fi
+fi
+
+# 降级链第二级:缓存卷没命中时,worker 自己从 HF 直拉(HF_FETCH_REPO 声明来源)。
+# 实测单流 80MB/s、多流并发 44GB 约 3-5 分钟;比 model caching 卡死强得多。
+if [ "$MODELS_LINKED" = "0" ] && [ -n "$HF_FETCH_REPO" ]; then
+    echo "worker-comfyui: Model cache miss, fetching from HF repo $HF_FETCH_REPO"
+    if ! python /fetch_models.py; then
+        echo "worker-comfyui: FATAL: model fetch failed"
+        exit 1
     fi
 fi
 
