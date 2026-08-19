@@ -32,7 +32,19 @@ runpodctl v2.9.0 无 logs 命令、GraphQL 无对应字段——只有这套 v2 
 5. GHCR public 镜像 RunPod 直接可拉,无需 registry 凭据;单层压缩后 10GB 上限,模型层压缩率实测 91.2%(20GB 单文件模型必超限)。
 6. RunPod GitHub 构建:30 分钟 docker build 硬上限(smoke 镜像 26m34s 已占 88%)、镜像总量 ≤80GB、构建期无 GPU。
 
-## Model caching(H3 阶段候选架构,2026-08-18 已实测打通)
+## Model caching(2026-08-19 结论:小模型可用,44GB 级实测卡死)
+
+**大 repo 实测失败**:44.4GB 转存 repo 配上 modelName 后,7 个 worker(两个 DC)
+全部停在 system 日志 "image ready, model pending download",3 小时零进展后放弃。
+对照实验排除了链路因素:同宿主机 curl 拉 HF 单流 80MB/s(官方 LFS 与 Xet 转存
+repo 速度相同)—— 是 RunPod 平台下载服务自身卡死,用户侧无法干预、无日志。
+
+**部署红线:endpoint 配了 modelName 而模型没下完时,worker 被扣住不启动容器**,
+镜像内的任何降级逻辑都没机会执行。在 RunPod 修好该服务前,生产 endpoint 不配
+modelName,模型分发走 worker 直拉(见 start.sh 降级链)或全量镜像。
+
+以下为机制记录(tiny 模型验证过,API/路径信息仍有效):
+
 
 - **API 配置字段(三个公开 API 面均无文档,错误消息探测法逼出)**:GraphQL
   `saveEndpoint` mutation 的 **`modelName`** 字段(写入侧存在、查询侧不可读;
