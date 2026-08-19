@@ -133,18 +133,36 @@ def cmd_run(args, workflow, given):
 # ---------------------------------------------------------------- query
 def cmd_query(args):
     rec = store.get(args.job_id)
-    if not rec:
-        print(f"本地没有 job {args.job_id} 的记录", file=sys.stderr)
-        return 1
     client = RunpodClient()
-    s = client.status(rec["endpoint_id"], args.job_id)
+    if rec:
+        endpoint_id = rec["endpoint_id"]
+    else:
+        # 非本机提交的 job(如直接调 API):遍历登记表逐个试查
+        endpoint_id = None
+        for entry in config.load().values():
+            eid = entry.get("endpoint_id")
+            if not eid:
+                continue
+            try:
+                if client.status(eid, args.job_id).get("raw_status"):
+                    endpoint_id = eid
+                    break
+            except Exception:
+                continue
+        if not endpoint_id:
+            print(f"找不到 job {args.job_id}(任务库无记录,登记的 endpoint 也查不到)",
+                  file=sys.stderr)
+            return 1
+    s = client.status(endpoint_id, args.job_id)
     outputs = (s.get("output") or {}).get("images")
-    store.update(args.job_id, s["status"], outputs, s.get("error"))
+    if rec:
+        store.update(args.job_id, s["status"], outputs, s.get("error"))
 
-    result = {"job_id": args.job_id, "workflow": rec["workflow_id"],
+    result = {"job_id": args.job_id,
+              "workflow": rec["workflow_id"] if rec else None,
               "status": s["status"], "error": s.get("error"),
               "execution_ms": s.get("execution_ms"),
-              "params": json.loads(rec["params"])}
+              "params": json.loads(rec["params"]) if rec else None}
     if outputs and args.download_dir:
         result["files"] = _save_outputs(outputs, args.download_dir)
     elif outputs:
