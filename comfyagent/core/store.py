@@ -34,6 +34,11 @@ CREATE INDEX IF NOT EXISTS idx_jobs_created ON jobs(created_at DESC);
 def _conn():
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     c = sqlite3.connect(DB_PATH)
+    # db 里有 prompt/本地路径/产物 URL,别让同机其他用户可读
+    try:
+        DB_PATH.chmod(0o600)
+    except OSError:
+        pass
     c.row_factory = sqlite3.Row
     c.executescript(_SCHEMA)
     return c

@@ -103,7 +103,7 @@ def run_workflow(workflow_id: str, params: dict, wait_seconds: int = 0) -> str:
     endpoint_id = config.resolve(wf.endpoint)
     client = RunpodClient()
     job_id = client.submit(endpoint_id, payload)
-    store.record(job_id, wf.id, endpoint_id, json.dumps(resolved, ensure_ascii=False))
+    store.record(job_id, wf.id, endpoint_id, resolved)
 
     result = {"job_id": job_id, "workflow": wf.id, "params": resolved, "status": "queued"}
     deadline = time.time() + wait_seconds

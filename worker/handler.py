@@ -934,7 +934,8 @@ def handler(job):
                         r2_url = upload_to_r2(image_bytes, filename, job_id, user_id)
 
                         if r2_url:
-                            print(f"worker-comfyui - Uploaded to R2: {r2_url}")
+                            # 日志里不能打完整 presigned URL(含 7 天有效签名)
+                            print(f"worker-comfyui - Uploaded to R2: {r2_url.split('?')[0]} (presigned)")
                             output_data.append({
                                 "filename": filename,
                                 "type": "r2_url",  # 前端注意识别这个新类型

@@ -28,6 +28,16 @@ def _emit(data, as_json, text_fn):
     print(json.dumps(data, ensure_ascii=False, indent=2) if as_json else text_fn(data))
 
 
+_BOOL_MAP = {"true": True, "1": True, "yes": True,
+             "false": False, "0": False, "no": False}
+
+
+def _parse_bool(s):
+    if s.lower() not in _BOOL_MAP:
+        raise argparse.ArgumentTypeError(f"期望 true/false,拿到 {s!r}")
+    return _BOOL_MAP[s.lower()]
+
+
 def _save_outputs(outputs, directory):
     """把产物落到本地,返回文件路径列表。
 
@@ -38,7 +48,8 @@ def _save_outputs(outputs, directory):
     directory.mkdir(parents=True, exist_ok=True)
     saved = []
     for item in outputs or []:
-        name = item.get("filename") or "output.png"
+        # 服务端返回的 filename 不可信:只取 basename,防目录穿越
+        name = Path(item.get("filename") or "output.png").name or "output.png"
         target = directory / name
         n = 1
         while target.exists():
@@ -257,9 +268,8 @@ def main(argv=None):
                 elif spec.type == "number":
                     kw["type"] = float
                 elif spec.type == "boolean":
-                    # agent 会传 --xx true/false 字符串;这里转成真 bool,
-                    # coerce 层保持严格(API 直调时不吞类型错误)。
-                    kw["type"] = lambda s: s.lower() in ("true", "1", "yes")
+                    # agent 会传 --xx true/false 字符串;拼错必须报错,不能静默当 false
+                    kw["type"] = _parse_bool
                     kw["metavar"] = "true|false"
                 if spec.enum:
                     kw["choices"] = spec.enum
