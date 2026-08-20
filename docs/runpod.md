@@ -90,6 +90,12 @@ A/B/C 三组实验(两次 10 分钟冷启动 + 3 张图 + model caching 探测)�
 
 ## 补充
 
+- **serverless worker 卡 IDLE 不接活(job 永远 IN_QUEUE)的三个成因**(2026-08-20 实测):
+  ① `dockerStartCmd` 过长(实测 3.2KB base64 内嵌命令)控制面照单全收但宿主机侧
+  静默失败,worker 永不进 INITIALIZING,**没有任何报错渠道**——启动命令保持简短,
+  大脚本烤进镜像或 wget 拉取;② FlashBoot 会黏住宿主机,抽到坏机后反复复用,
+  删 endpoint 重建才换机(PATCH 无效);③ 卡死时 health API 照样报 idle/ready
+  (与 crash loop 伪装同款)。社区高频坑(answeroverflow 1338944716955189350)。
 - **CUDA 版本锁定用 `minCudaVersion`,不要用 `allowedCudaVersions`**:后者是精确
   匹配列表且服务端枚举上限就是 "13.0"(传 "13.1" 直接 400),锁 ["13.0"] 会把
   未来 13.1+ 驱动的宿主机排除在外、白白缩小 worker 池。`minCudaVersion: "13.0"`
