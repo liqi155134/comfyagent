@@ -62,12 +62,38 @@ at L≈101k and/or real data distribution.
 
 Probe script: https://github.com/liqi155134/comfyagent/blob/main/scripts/diag_sage_tail.py
 
-## Suspicion
+## Source-level observations (at `d1a57a546c3d`)
 
-Something in the sm90 kernel's handling of the final KV/Q tiles at large L with the
-strided (stride_n=3×head_stride) layout — possibly out-of-range reads on the tail
-block, or per-block quantization scales going degenerate. Related reports:
-#320 (sm90 backend broken, fixed on main), Comfy-Org/ComfyUI#15263 (H3 + sage noise
-above ~160k tokens on sm_120).
+Things we checked and can rule out or narrow down:
+
+- **The fused-QKV strided layout is NOT the trigger.** With the default
+  `smooth_k=True`, `per_thread_int8()` computes `k = k - km`, which materializes a
+  contiguous K; Q goes through the Triton quant kernel with explicit strides. So the
+  sm90 CUDA kernel only ever sees contiguous int8/fp8 buffers — the only variable
+  distinguishing the clean t2v call from the corrupted i2v call at kernel level is
+  **the sequence length itself** (100691 vs 101509).
+- **#288 / #320** (general sm90 accuracy breakage): fixed on main before our build;
+  consistent with our clean t2v output (nearly pixel-identical to SDPA reference).
+- **#383** (per_channel_fp8 pad-64 vs CTA_K=128): not our path — the top-level
+  `sageattn_qk_int8_pv_fp8_cuda_sm90` pre-pads V to a multiple of 128 before
+  `per_channel_fp8`. Noting it here because it is the same "tail tile" neighborhood.
+- `q_int8`/`k_int8` are allocated **unpadded** (`torch.empty(q.shape)`); the kernel's
+  TMA tensor maps use the true `qo_len`/`kv_len` as globalDim so OOB tile reads are
+  hardware zero-filled, and the peeled last iteration masks `k_idx >= kv_len`.
+  Output stores are masked per 8 rows against `qo_len` (output buffer is
+  `torch.empty`, i.e. uninitialized — any store-mask miss would surface as garbage
+  exactly like what we see).
+
+## Tile arithmetic of the two cases
+
+| case | L | L % 64 | L % 128 | ceil(L/64) Q-blocks | tail KV tile valid rows |
+|---|---|---|---|---|---|
+| t2v (clean) | 100691 | 19 | **83** | 1574 (even) | 83 (spans both 64-halves) |
+| i2v (corrupted) | 101509 | 37 | **5** | 1587 (odd) | 5 (first 64-half only) |
+
+The corrupted case has only 5 valid keys in the last CTA_K=128 tile (all inside the
+first 64-row half), and an odd number of 64-row Q blocks; the clean case's tail tile
+spans both halves. If the tail-tile masking or the second-half wgmma path has an
+edge case, this is where it would show.
 
 Happy to run further probes on H100 if you can suggest what to instrument.
