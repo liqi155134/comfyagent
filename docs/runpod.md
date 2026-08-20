@@ -87,3 +87,10 @@ A/B/C 三组实验(两次 10 分钟冷启动 + 3 张图 + model caching 探测)�
 - skills plugin:`npx skills add runpod/runpod-plugins-official`(router + runpodctl + Flash + MCP)
 - API MCP:`@runpod/mcp-server`(REST 包装,RUNPOD_API_KEY);docs MCP:`https://docs.runpod.io/mcp`(免认证)
 - 本项目取舍:comfyagent 作为自动化框架直接调 REST 更可控;docs MCP 适合配给 agent 随手查文档
+
+## 补充
+
+- **CUDA 版本锁定用 `minCudaVersion`,不要用 `allowedCudaVersions`**:后者是精确
+  匹配列表且服务端枚举上限就是 "13.0"(传 "13.1" 直接 400),锁 ["13.0"] 会把
+  未来 13.1+ 驱动的宿主机排除在外、白白缩小 worker 池。`minCudaVersion: "13.0"`
+  才是"13.0 或以上"语义(2026-08-20 全端点已切换)。
