@@ -1,6 +1,6 @@
 # Title
 
-sm90: tail of sequence corrupted (last video frames become gray noise) with MiniMax H3 image-to-video — works on text-to-video with nearly identical length
+per_thread quant Triton kernels: int32 pointer-arithmetic overflow corrupts Q (or crashes) for large-stride fused-QKV inputs at seq_len ≈ 100k+
 
 # Body
 
@@ -13,87 +13,125 @@ sm90: tail of sequence corrupted (last video frames become gray noise) with Mini
 - ComfyUI v0.33.1 with `--use-sage-attention`, MiniMax H3 (official int8_convrot
   quantized DiT), bf16 activations
 
-## Symptom
+## Symptom (production)
 
-With MiniMax H3 **image-to-video** (first-frame conditioned), the last ~3-4 output
-pixel frames (= last 1 latent frame, temporal VAE 4x) collapse into gray low-frequency
-noise. The preceding ~470 frames are perfect. 100% reproducible across seeds, hosts,
-and step counts (20-step base and 8-step LoRA both affected).
+With MiniMax H3 image-to-video (15 s / 1280×736, video-stream seq_len **101509**),
+the last ~3-4 output pixel frames (= last latent frame) collapse into gray noise;
+occasionally the job dies with `CUDA error: an illegal memory access was encountered`
+instead. Q/K/V arrive as **non-contiguous views of a fused QKV tensor**:
 
-**Text-to-video through the same pipeline is clean**, including a 4-way same-seed
-matrix (sage on/off × 20-step/8-step) where sage-on output is nearly pixel-identical
-to the fp16 SDPA reference.
+```
+shape  = (1, 56, L, 128)
+stride = (7168, 128, 21504, 1)   # seq-stride = 3 × heads × head_dim
+```
 
-## Isolation
+## Root cause
 
-| variable | result |
-|---|---|
-| same seed, `--use-sage-attention` off (pytorch SDPA) | clean |
-| same shapes through comfy-kitchen int8 attention (`--use-ck-attention`) | clean |
-| different worker/host | still corrupted |
-| t2v vs i2v | only i2v corrupted |
+`sageattention/triton/quant_per_thread.py :: quant_query_per_thread_int8_kernel`
+computes row offsets in int32:
 
-So this is specific to the sageattention sm90 path, triggered by the i2v workload.
+```python
+offs_n = off_blk * BLK + tl.arange(0, BLK // 8) * 8 + off_tld     # int32
+...
+input_ptrs = Input + ... + offs_n[:, None] * stride_in + offs_k[None, :]
+```
 
-## Actual attention call shapes (captured in-process)
+With `stride_in = 21504`, the product `offs_n * stride_in` exceeds `INT32_MAX`
+for every **valid** row `n > 2^31 / 21504 ≈ 99864`, wrapping negative. The load
+mask (`offs_n < L`) does not help — these are in-bounds rows whose *addresses*
+are computed wrong. Depending on where `base − ~2 GiB` lands, the kernel either
+reads garbage (→ tail of the sequence quantizes to nonsense → last video frames
+collapse) or hits an unmapped page (→ illegal memory access).
 
-All calls are `sageattn(q, k, v, tensor_layout="HND", is_causal=False)`, bf16.
-Q/K/V are **non-contiguous strided views of a fused QKV tensor**
-(hidden 21504 = 3×56×128):
+K is unaffected only by luck: with the default `smooth_k=True`, `k = k - km`
+materializes a contiguous copy first, so its seq-stride is 128. Q keeps the
+original stride 21504 all the way into the kernel. For contiguous Q the
+overflow threshold is `2^31 / 128 ≈ 16.7M` tokens — unreachable, which is why
+only the fused-layout path fails.
 
-| stream | shape | stride |
+This is the same class of issue as triton-lang/triton#6346 (large-stride
+multiplies compiled to `mul.lo.s32`) and #9247; the standard fix is an explicit
+`offs_n.to(tl.int64) * stride_in`.
+
+## Evidence (all on H100, bf16, heads=56, head_dim=128, HND)
+
+Direct calls to `per_thread_int8_triton(q, k, km, BLKQ=64, WARPQ=16, BLKK=128,
+WARPK=128)` with fused-layout Q (seq-stride 21504), comparing against the same
+call on `q.contiguous()`:
+
+| L | max row offset vs 2^31 | result |
 |---|---|---|
-| video stream, t2v 15s/1280×736 | (1, 56, **100691**, 128) | (7168, 128, **21504**, 1) |
-| video stream, i2v 15s/1280×736 (corrupted) | (1, 56, **101509**, 128) | (7168, 128, 21504, 1) |
-| text/cond stream, i2v | (1, 56, 943, 128) | (7168, 128, 7168, 1) |
+| 8192 | far below | byte-identical int8 + scales |
+| **99840** | 2,146,937,856 < 2^31 (largest safe 64-multiple) | **byte-identical** |
+| **99904** | rows 99865..99903 wrap negative | **Triton illegal memory access** |
+| 101504 (multiple of 128) | ~1640 tail rows wrap | illegal memory access |
+| 101509 (production i2v length) | ~1644 tail rows wrap | illegal memory access |
 
-The only difference between the clean t2v case and the corrupted i2v case on the
-video stream is +818 tokens (keyframe conditioning tokens appended by the i2v path).
-The corruption appears at the **tail of the sequence** (which maps to the last
-video frames).
+The 64-row-granularity bisection lands exactly on `2^31 / 21504 = 99864.7`.
 
-## What did NOT reproduce it
+End-to-end `sageattn()` with the same fused layout (when the wild reads happen
+to hit mapped memory instead of crashing): sequence-uniform rel-error 0.039 vs
+SDPA for the first ~99.8k tokens, then the tail blows up (last-128-token
+rel-error 0.8–1.1) — matching the production symptom, where the corrupted tail
+tokens map to the last video frames. Same lengths with fully contiguous Q/K/V:
+uniform 0.039, no tail anomaly. Lengths 65k–90k (below threshold): clean in
+every layout.
 
-A synthetic probe (random bf16 data, same head count/dim, both contiguous and
-transposed layouts, L from 65k to 90k including odd remainders) shows uniform
-~0.039 relative error vs SDPA — no tail blowup. So plain random-data self-attention
-at these sizes is fine; the trigger seems to need the exact fused-QKV strided layout
-at L≈101k and/or real data distribution.
+Probe script (all experiments reproducible):
+https://github.com/liqi155134/comfyagent/blob/main/scripts/diag_sage_tail.py
 
-Probe script: https://github.com/liqi155134/comfyagent/blob/main/scripts/diag_sage_tail.py
+## Minimal repro
 
-## Source-level observations (at `d1a57a546c3d`)
+```python
+import torch
+from sageattention.core import per_thread_int8_triton  # triton path used by sm90 per_thread
 
-Things we checked and can rule out or narrow down:
+L, H, D = 101509, 56, 128
+big = torch.randn(L * 3 * H * D, device="cuda", dtype=torch.bfloat16)
+q, k, v = (big.as_strided((1, H, L, D), (H * D, D, 3 * H * D, 1), storage_offset=i * H * D)
+           for i in range(3))
+km = k.mean(dim=2, keepdim=True)
+per_thread_int8_triton(q, k, km, tensor_layout="HND", BLKQ=64, WARPQ=16, BLKK=128, WARPK=128)
+torch.cuda.synchronize()   # -> RuntimeError: Triton Error [CUDA]: an illegal memory access
+```
 
-- **The fused-QKV strided layout is NOT the trigger.** With the default
-  `smooth_k=True`, `per_thread_int8()` computes `k = k - km`, which materializes a
-  contiguous K; Q goes through the Triton quant kernel with explicit strides. So the
-  sm90 CUDA kernel only ever sees contiguous int8/fp8 buffers — the only variable
-  distinguishing the clean t2v call from the corrupted i2v call at kernel level is
-  **the sequence length itself** (100691 vs 101509).
-- **#288 / #320** (general sm90 accuracy breakage): fixed on main before our build;
-  consistent with our clean t2v output (nearly pixel-identical to SDPA reference).
-- **#383** (per_channel_fp8 pad-64 vs CTA_K=128): not our path — the top-level
-  `sageattn_qk_int8_pv_fp8_cuda_sm90` pre-pads V to a multiple of 128 before
-  `per_channel_fp8`. Noting it here because it is the same "tail tile" neighborhood.
-- `q_int8`/`k_int8` are allocated **unpadded** (`torch.empty(q.shape)`); the kernel's
-  TMA tensor maps use the true `qo_len`/`kv_len` as globalDim so OOB tile reads are
-  hardware zero-filled, and the peeled last iteration masks `k_idx >= kv_len`.
-  Output stores are masked per 8 rows against `qo_len` (output buffer is
-  `torch.empty`, i.e. uninitialized — any store-mask miss would surface as garbage
-  exactly like what we see).
+`L = 99840` succeeds (byte-identical to the contiguous path); `L = 99904` is the
+first failing 64-multiple.
 
-## Tile arithmetic of the two cases
+## Verified fix
 
-| case | L | L % 64 | L % 128 | ceil(L/64) Q-blocks | tail KV tile valid rows |
-|---|---|---|---|---|---|
-| t2v (clean) | 100691 | 19 | **83** | 1574 (even) | 83 (spans both 64-halves) |
-| i2v (corrupted) | 101509 | 37 | **5** | 1587 (odd) | 5 (first 64-half only) |
+A copy of `quant_query_per_thread_int8_kernel` with a single change —
 
-The corrupted case has only 5 valid keys in the last CTA_K=128 tile (all inside the
-first 64-row half), and an odd number of 64-row Q blocks; the clean case's tail tile
-spans both halves. If the tail-tile masking or the second-half wgmma path has an
-edge case, this is where it would show.
+```python
+in_row  = offs_n.to(tl.int64)[:, None] * stride_in
+out_row = offs_n.to(tl.int64)[:, None] * stride_on
+```
 
-Happy to run further probes on H100 if you can suggest what to instrument.
+— run on the **strided** Q at L=101509 produces int8 output and scales
+**byte-identical** to the original kernel on `q.contiguous()` (0 mismatched
+elements in both), where the unpatched kernel on the same strided input dies
+with an illegal memory access. (H100, torch 2.13.0+cu130, CUDA_LAUNCH_BLOCKING=1.)
+
+## Second, independent bug found while isolating
+
+In `sageattn_qk_int8_pv_fp8_cuda_sm90`, V is only materialized by the pad-to-128
+`torch.cat` when `kv_len % 128 != 0`. When `kv_len` is an exact multiple of 128,
+a strided V goes straight into `per_channel_fp8` (CUDA kernels), which assumes
+contiguous input → illegal memory access. Repro: full `sageattn()` call with the
+fused layout at L=8192 crashes; same call with `v.contiguous()` succeeds.
+
+## Impact & suggested fix
+
+- Not sm90-specific: every arch path that uses `per_thread_int8_triton` (and the
+  int4 / per-warp Triton variants with the same `offs_n * stride_in` pattern) is
+  affected for any large-stride input with `seq_len > 2^31 / seq_stride`.
+  Fused-QKV layouts (stride = 3·H·D) hit this at ~100k tokens — exactly the
+  regime of current long video DiTs.
+- Fix: promote row offsets to int64 in the quant kernels
+  (`offs_n.to(tl.int64) * stride_in`, likewise for the output side when the
+  output can be strided), or `.contiguous()`-fallback on large-stride inputs at
+  the dispatch level.
+- The V/`per_channel_fp8` path needs either a contiguity check or an
+  unconditional materialization.
+
+Happy to send a PR for the int64 promotion if useful.
