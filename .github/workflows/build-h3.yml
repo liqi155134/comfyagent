@@ -70,6 +70,33 @@ jobs:
           cache-to: type=gha,mode=max
           provenance: false
 
+      # 主构建刚跑完,sage-builder 层在 GHA cache 里全热,这一步是纯 cache
+      # 命中(秒级)。单独跑 extract workflow 曾因 cache 不热撞 GHA 6h 硬超时。
+      - name: Extract sage wheel
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/h3.Dockerfile
+          target: sage-builder
+          push: false
+          outputs: type=local,dest=/tmp/sage-out
+          cache-from: type=gha
+          provenance: false
+
+      - name: Upload wheel to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          WHL=$(find /tmp/sage-out -name "*.whl" | head -1)
+          if [ -z "$WHL" ]; then echo "未找到 wheel,跳过"; exit 0; fi
+          TAG="sage-wheel"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+                 --title "SageAttention wheel (自托管)" \
+                 --notes "build-h3 顺产的 sage wheel,cu130/sm90。"
+          gh release upload "$TAG" "$WHL" --clobber --repo "$GITHUB_REPOSITORY"
+          echo "- sage wheel: $(basename "$WHL") -> release $TAG" >> $GITHUB_STEP_SUMMARY
+
       # 这些数字直接决定 H3 阶段能不能沿用这条路,记录下来
       - name: Report image size
         run: |

@@ -61,9 +61,15 @@ echo "worker-comfyui: Starting ComfyUI"
 # Allow operators to tweak verbosity; default is WARNING.
 : "${COMFY_LOG_LEVEL:=WARNING}"
 
-# SageAttention 按 env 开关(h3 模板置 true;镜像里没装 sage 时不要开)
+# attention 后端按 env 开关(互斥,ck 优先):
+#   USE_CK_ATTENTION=true  -> comfy-kitchen int8 attention(i2v 用:thu-ml sage
+#                             的 sm90 kernel 在 i2v conditioning 下尾帧塌坏)
+#   USE_SAGE_ATTENTION=true -> thu-ml SageAttention(t2v 用,更快)
 COMFY_EXTRA_ARGS=""
-if [ "$USE_SAGE_ATTENTION" = "true" ]; then
+if [ "$USE_CK_ATTENTION" = "true" ]; then
+    COMFY_EXTRA_ARGS="--use-ck-attention"
+    echo "worker-comfyui: comfy-kitchen int8 attention enabled"
+elif [ "$USE_SAGE_ATTENTION" = "true" ]; then
     COMFY_EXTRA_ARGS="--use-sage-attention"
     echo "worker-comfyui: SageAttention enabled"
 fi

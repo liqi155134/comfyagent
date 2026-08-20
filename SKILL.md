@@ -57,9 +57,10 @@ claude mcp add comfyagent -- python3 -m comfyagent.mcp_server   # 在 /workspace
 ## h3_i2v(图生视频)要点
 
 与 h3_t2v 参数一致,另加必填 `image`(首帧图片本地路径,png/jpg/webp,自动
-base64 上传)。**走 no-sage 端点**(i2v+sage 有尾帧塌坏 bug,见 docs/h3.md),
-同规格比 t2v 慢:15s/0.9MP/8 步 LoRA ≈ 439s($0.58)。prompt 的场景描述必须
-与输入图一致,否则画面突变。
+base64 上传)。**走 comfy-kitchen attention 端点 `h3_ck`**(thu-ml sage 的
+sm90 kernel 在 i2v 下尾帧塌坏,见 docs/h3.md),同规格比 t2v 慢:
+15s/0.9MP/8 步 LoRA ≈ 384s($0.51)。prompt 的场景描述必须与输入图一致,
+否则画面突变。
 
 ```bash
 python3 -m comfyagent.cli --json run h3_i2v \

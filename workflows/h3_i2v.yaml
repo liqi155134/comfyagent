@@ -11,7 +11,7 @@ description: >
 
 template: h3_i2v.json
 
-endpoint: h3_nosage
+endpoint: h3_ck
 
 params:
   image:
