@@ -84,7 +84,8 @@ def _full_case(c, heads, dim, out):
         return round((d.norm() / (r.norm() + 1e-8)).item(), 4)
 
     d = res - ref
-    et = d.norm(dim=(0, 1, 3)) / (ref.norm(dim=(0, 1, 3)) + 1e-8)
+    # 注:Tensor.norm(dim=3元组) 走 matrix_norm 会报错,手写 L2
+    et = d.square().sum(dim=(0, 1, 3)).sqrt() / (ref.square().sum(dim=(0, 1, 3)).sqrt() + 1e-8)
     med = et.median().item()
     bad = (et > max(5 * med, 0.15)).nonzero().flatten()
     out.update({"rel_all": rel(d, ref), "rel_last128": rel(d[:, :, -128:], ref[:, :, -128:]),
