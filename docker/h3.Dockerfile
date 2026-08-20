@@ -68,6 +68,12 @@ RUN mkdir /sage && cd /sage \
 # ------------------------------------------------------------------------------
 # Stage 2: final —— 运行时环境(无模型)
 # ------------------------------------------------------------------------------
+# wheel 导出专用微型 stage:target=sage-wheel-export 的 local output 只含
+# wheel 文件(几十 MB);直接 target=sage-builder 会导出整个 rootfs(十几 GB),
+# 曾把独立提取 workflow 拖到 GHA 6h 超时。
+FROM scratch AS sage-wheel-export
+COPY --from=sage-builder /sage/dist/*.whl /
+
 FROM nvidia/cuda:${CUDA_IMAGE_TAG}-cudnn-runtime-ubuntu24.04 AS final
 
 ARG COMFYUI_REF
