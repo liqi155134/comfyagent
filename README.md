@@ -7,7 +7,7 @@ Agent (Claude Code / Codex / ...)
     ↓  CLI 或 MCP
 comfyagent
     ↓  提交工作流 + 参数
-RunPod serverless (ComfyUI + 烤在镜像里的模型)
+RunPod serverless (ComfyUI + 模型)
     ↓
 产物(本地文件 / R2 URL)
 ```
@@ -16,8 +16,11 @@ agent 只认 **workflow id + 参数**,不需要知道 ComfyUI 存在,也不拼�
 
 ## 设计要点
 
-- **模型烤进镜像,不用 network volume** —— volume 绑单个数据中心,会切窄可调度
-  GPU 池,而 serverless 上「没资源」表现为排队而非报错,极难归因。
+- **不用 network volume** —— volume 绑单个数据中心,会切窄可调度 GPU 池,而
+  serverless 上「没资源」表现为排队而非报错,极难归因。模型进 worker 的两条路:
+  小模型直接烤进镜像(smoke);大模型(H3 44GB)镜像里只有代码,worker 首次冷启动
+  时经 `HF_FETCH_REPO` 从 HF 拉权重(hf_transfer 多线程),之后靠 FlashBoot 快照
+  免重复下载。
 - **一个镜像可承载多个工作流** —— 共享同一批权重的能力(例:原版 / LoRA 加速版)
   共用一个 endpoint,避免把 40GB 权重和冷启动代价付两遍。
 - **失败要大声** —— 兜底逻辑绝不制造假终态;构建期能钉死的事实在构建期钉死。
