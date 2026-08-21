@@ -11,7 +11,9 @@ description: >
 
 template: h3_i2v.json
 
-endpoint: h3_ck
+# 默认走 sage int64 修复版(尾帧塌坏根因已修,比 ck 省 ~31%);
+# 高忠实度需求可临时改 h3_ck(comfy-kitchen,首帧 MAD 1.77/255 vs sage 6.80)
+endpoint: h3
 
 params:
   image:

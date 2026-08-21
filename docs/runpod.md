@@ -31,6 +31,8 @@ runpodctl v2.9.0 无 logs 命令、GraphQL 无对应字段——只有这套 v2 
 4. **`dockerStartCmd` 覆盖 = 免重建的容器内探针**:同一镜像 + 新 template 覆盖启动命令为内联诊断 handler,job 返回值携带容器内任意命令的 stdout/stderr。在日志 API 之外多一条取证通道,也可用于 A/B 隔离"镜像内容"与"启动脚本"。
 5. GHCR public 镜像 RunPod 直接可拉,无需 registry 凭据;单层压缩后 10GB 上限,模型层压缩率实测 91.2%(20GB 单文件模型必超限)。
 6. RunPod GitHub 构建:30 分钟 docker build 硬上限(smoke 镜像 26m34s 已占 88%)、镜像总量 ≤80GB、构建期无 GPU。
+7. **FlashBoot 快照恢复不重跑 `dockerStartCmd`**(2026-08-20 实测):启动命令里 wget 的脚本在快照恢复的容器里是旧版;踢 `workersMax` 0→1 换不掉。强制新容器要**改 template**(如 env 加版本号)使快照失效。反之,启动时打的运行时补丁(文件系统改动)会随快照保留——利用这点,"启动链打补丁"模式(如 patch_sage_int64)与 FlashBoot 兼容。
+8. **CUDA illegal memory access 会废掉整个 CUDA context**:同 worker 的后续 job 连带失败(症状飘忽)。崩溃类探针必须每 case 独立 job,崩一次就换 worker;偶发 illegal access 别急着归因宿主机瞬态(sage int32 溢出 bug 曾被这么误判)。
 
 ## Model caching(2026-08-19 结论:小模型可用,44GB 级实测卡死)
 

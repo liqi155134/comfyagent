@@ -57,10 +57,11 @@ claude mcp add comfyagent -- python3 -m comfyagent.mcp_server   # 在 /workspace
 ## h3_i2v(图生视频)要点
 
 与 h3_t2v 参数一致,另加必填 `image`(首帧图片本地路径,png/jpg/webp,自动
-base64 上传)。**走 comfy-kitchen attention 端点 `h3_ck`**(thu-ml sage 的
-sm90 kernel 在 i2v 下尾帧塌坏,见 docs/h3.md),同规格比 t2v 慢:
-15s/0.9MP/8 步 LoRA ≈ 384s($0.51)。prompt 的场景描述必须与输入图一致,
-否则画面突变。
+base64 上传)。默认走 `h3`(**sage int64 修复版**——曾经的尾帧塌坏根因是
+Triton 量化 kernel int32 指针溢出,已修并双重验证,见 docs/h3.md),同规格比
+t2v 慢:15s/0.9MP/8 步 LoRA ≈ 258s($0.35)。高忠实度需求(对比素材等)可把
+workflow endpoint 临时改 `h3_ck`(comfy-kitchen,首帧 MAD 1.77/255 vs sage
+6.80,慢 ~49%)。prompt 的场景描述必须与输入图一致,否则画面突变。
 
 ```bash
 python3 -m comfyagent.cli --json run h3_i2v \
@@ -84,9 +85,12 @@ python3 -m comfyagent.cli --json run h3_i2v \
 
 | 配置 | execution | 成本 |
 |---|---|---|
-| 5s / 0.4MP / 8 步 LoRA | ~42s | ~$0.06 |
-| 15s / 0.9MP / 8 步 LoRA | ~253s | ~$0.34 |
-| 15s / 0.9MP / 20 步原生 | ~529s | ~$0.70 |
+| t2v 5s / 0.4MP / 8 步 LoRA | ~40s | ~$0.06 |
+| t2v 15s / 0.9MP / 8 步 LoRA | ~253s | ~$0.34 |
+| t2v 15s / 0.9MP / 20 步原生 | ~529s | ~$0.70 |
+| i2v 15s / 0.9MP / 8 步 LoRA(sage 修复版) | ~258s | ~$0.35 |
+| i2v 15s / 0.9MP / 8 步 LoRA(h3_ck 备选) | ~384s | ~$0.51 |
+| i2v 15s / 0.9MP / 20 步原生 | ~564s | ~$0.75 |
 
 冷启动税(仅新宿主机首次):拉镜像 ~2-3 分钟(不计费)+ 拉 44GB 模型 ~96s(计费
 $0.13);FlashBoot 复用时 <1s。排队 15 分钟以上不是 bug 就是 H100 供给紧张,
