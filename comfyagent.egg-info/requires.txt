@@ -1,0 +1,8 @@
+PyYAML>=6.0
+
+[dev]
+pytest>=8.0
+pytest-subtests>=0.12
+
+[mcp]
+mcp>=1.0

@@ -1,0 +1,2 @@
+[console_scripts]
+comfyagent = comfyagent.cli:main

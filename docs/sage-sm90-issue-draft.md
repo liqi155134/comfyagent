@@ -112,14 +112,6 @@ out_row = offs_n.to(tl.int64)[:, None] * stride_on
 elements in both), where the unpatched kernel on the same strided input dies
 with an illegal memory access. (H100, torch 2.13.0+cu130, CUDA_LAUNCH_BLOCKING=1.)
 
-## Second, independent bug found while isolating
-
-In `sageattn_qk_int8_pv_fp8_cuda_sm90`, V is only materialized by the pad-to-128
-`torch.cat` when `kv_len % 128 != 0`. When `kv_len` is an exact multiple of 128,
-a strided V goes straight into `per_channel_fp8` (CUDA kernels), which assumes
-contiguous input → illegal memory access. Repro: full `sageattn()` call with the
-fused layout at L=8192 crashes; same call with `v.contiguous()` succeeds.
-
 ## Impact & suggested fix
 
 - Not sm90-specific: every arch path that uses `per_thread_int8_triton` (and the
@@ -131,7 +123,5 @@ fused layout at L=8192 crashes; same call with `v.contiguous()` succeeds.
   (`offs_n.to(tl.int64) * stride_in`, likewise for the output side when the
   output can be strided), or `.contiguous()`-fallback on large-stride inputs at
   the dispatch level.
-- The V/`per_channel_fp8` path needs either a contiguity check or an
-  unconditional materialization.
 
 Happy to send a PR for the int64 promotion if useful.

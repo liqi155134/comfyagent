@@ -111,8 +111,9 @@ python3 -m comfyagent.cli --json run h3_i2v \
 20 步 vs 8 步 LoRA:约 2.1x 耗时换更实的细节与更稳的运动;i2v 比同规格 t2v
 慢约 5%(多 818 个 keyframe conditioning token)。
 
-冷启动税(仅新宿主机首次):拉镜像 ~2-3 分钟(不计费)+ 拉 44GB 模型 ~96s(计费
-$0.13);FlashBoot 复用时 <1s。排队 15 分钟以上不是 bug 就是 H100 供给紧张,
+**成本按 execution 折算,实际账单更高**:RunPod 对启动、执行、以及缩到 IDLE 前的
+idle timeout 都计费(实测冒烟 execution 39.6s → 计费 150.0s)。冷启动税(仅新宿主机
+首次):拉镜像 ~2-3 分钟 + 拉 44GB 模型 ~96s;FlashBoot 复用时 <1s。排队 15 分钟以上不是 bug 就是 H100 供给紧张,
 用 worker 日志 API 看现场(见 docs/runpod.md)。
 
 ## 常见错误与自纠

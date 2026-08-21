@@ -1,0 +1,68 @@
+# MiniMax H3 参考生视频(ref2va:多参考图驱动,音视频联合生成)。
+# 与 t2v/i2v 是**另一套权重**(ref2va UNET + ref2v 4step turbo LoRA),
+# 但共用 VAE/CLIP;端点见下方 endpoint。
+id: h3_r2v
+title: MiniMax H3 参考生视频
+description: >
+  MiniMax H3 参考生视频:给 1-9 张参考图(角色/物件/场景/风格),生成带音频的视频。
+  与 i2v 的区别是参考图**不作为首帧**,而是作为"这些东西长什么样"的依据参与全程生成,
+  所以角色一致性和多主体组合是它的强项。
+  prompt 里用 <Picture 1>、<Picture 2> 指代参考图,序号即传入顺序(1-based)。
+  默认全步数;enable_lora=true 切 4 步 turbo LoRA 加速。
+
+template: h3_r2v.json
+
+endpoint: h3_r2v
+
+params:
+  ref_images:
+    type: images
+    required: true
+    max_items: 9
+    slot_node: "137"
+    target_node: "136"
+    target_prefix: "ref_images.ref_image_"
+    description: >
+      参考图本地路径列表(1-9 张,png/jpg/jpeg/webp)。顺序决定 prompt 里的
+      <Picture N> 编号:第一张是 <Picture 1>。提交时自动上传到 worker。
+  prompt:
+    type: string
+    required: true
+    description: >
+      视频内容描述,用 <Picture N> 指代参考图(例:"<Picture 1> 的角色走进
+      <Picture 2> 的房间")。支持分镜脚本式写法(镜头、运镜、音频提示),英文更稳。
+      注意:没接音频输入时别写 <Audio 1>,那会指向不存在的引用。
+  duration:
+    type: number
+    default: 5
+    min: 1
+    max: 15
+    description: 目标时长(秒),按 24fps 折算并对齐到模型合法帧数(step 17)。训练范围约 5-15s。
+  aspect_ratio:
+    type: string
+    default: "16:9 (Widescreen)"
+    enum: ["1:1 (Square)", "2:3 (Portrait Photo)", "3:2 (Photo)",
+           "3:4 (Portrait Standard)", "4:3 (Standard)",
+           "9:16 (Vertical)", "16:9 (Widescreen)", "21:9 (Cinematic)"]
+    description: 画面比例,值必须与枚举完全一致。
+  megapixels:
+    type: number
+    default: 0.4
+    min: 0.1
+    max: 1.2
+    description: 画布像素量(0.4≈848×480,0.9≈1280×736);越高越慢。
+  ref_image_size:
+    type: string
+    default: "match"
+    enum: ["match", "max"]
+    description: >
+      参考图送入分辨率。match=缩到与画布同像素量(默认,快);
+      max=按 2048 短边送入,identity 保真最好,但参考 token 每个采样步都参与,
+      **可能慢数倍**,张数多时尤其明显。
+  enable_lora:
+    type: boolean
+    default: false
+    description: true = 4 步 turbo LoRA 加速(ref2v_turbo_4step v0.1);false = 全步数原生质量。
+  seed:
+    type: integer
+    description: 随机种子。省略即随机,实际值记进任务库供复现。

@@ -28,6 +28,8 @@ packages = ["comfyagent", "comfyagent.core"]
 
 [tool.setuptools.package-data]
 comfyagent = ["../workflows/*.yaml", "../workflows/*.json"]
+# 部署声明必须随包走,否则正式 wheel 装完 deploy 命令找不到它
+"comfyagent.core" = ["deployments.yaml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

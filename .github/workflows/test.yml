@@ -45,6 +45,20 @@ jobs:
           print('loaded:', sorted(wfs))
           "
 
+      # editable 安装掩盖过一次真问题:正式 wheel 里没有仓库根,部署声明必须
+      # 作为 package data 随包走,否则 deploy 命令装完就用不了。
+      - name: Built wheel is self-contained
+        run: |
+          python -m pip wheel --no-deps -w /tmp/wh .
+          python -m venv /tmp/wv
+          /tmp/wv/bin/pip install -q PyYAML /tmp/wh/comfyagent-*.whl
+          /tmp/wv/bin/python -c "
+          from comfyagent.core.deploy import load_spec
+          specs = load_spec()
+          assert specs, '正式 wheel 里读不到部署声明'
+          print('wheel 自包含 OK:', sorted(specs))
+          "
+
       # 部署声明必须能解析,且不含持续计费配置(workers_min>0 需人工确认)
       - name: Deployment spec sanity
         run: |

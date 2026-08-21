@@ -56,10 +56,16 @@ RUN uv pip install --no-cache "torch==${TORCH_VERSION}" setuptools wheel ninja
 
 # 交叉编译:无 GPU 环境必须显式给 TORCH_CUDA_ARCH_LIST,
 # 否则 setup.py 会尝试探测本机 GPU 然后失败。
+# int32 指针溢出修复必须打在 **bdist_wheel 之前** —— 否则导出到 Release 的
+# wheel 仍是脆弱版,单独安装的人会重新踩坑(2026-08-21 复核实锤)。
+COPY scripts/patch_sage_int64.py /tmp/patch_sage_int64.py
+
 RUN mkdir /sage && cd /sage \
     && git init -q && git remote add origin https://github.com/thu-ml/SageAttention.git \
     && git fetch -q --depth 1 origin "${SAGE_REF}" \
     && git checkout -q FETCH_HEAD \
+    && python /tmp/patch_sage_int64.py /sage/sageattention/triton/quant_per_thread.py \
+    && grep -c "to(tl.int64)" /sage/sageattention/triton/quant_per_thread.py \
     && TORCH_CUDA_ARCH_LIST="${SAGE_CUDA_ARCHS}" \
        MAX_JOBS=2 NVCC_APPEND_FLAGS="--threads 2" \
        python setup.py bdist_wheel \
@@ -123,13 +129,9 @@ COPY --from=sage-builder /sage/dist/*.whl /tmp/wheels/
 RUN uv pip install --no-cache runpod requests websocket-client boto3 hf_transfer /tmp/wheels/*.whl \
     && rm -rf /tmp/wheels
 
-# sage int32 指针溢出修复(2026-08-20 定论,见 docs/sage-sm90-issue-draft.md):
-# 量化 kernel 的行偏移 offs_n * stride_in 在 int32 域相乘,fused QKV 布局
-# (Q seq-stride=21504)下行号 > 2^31/21504 ≈ 99865 即 wrap 负 → 尾帧塌坏 /
-# illegal memory access。构建期打补丁(此前是启动时 wget,依赖外网且 FlashBoot
-# 快照行为易混淆)。上游合入后删除本步骤即可。
-COPY scripts/patch_sage_int64.py /tmp/patch_sage_int64.py
-RUN python /tmp/patch_sage_int64.py && rm /tmp/patch_sage_int64.py
+# 注:int32 指针溢出修复已在 sage-builder 里 **编译前** 打进源码(见上),
+# 所以这里装的 wheel 本身就是修复版,不需要二次 patch;下面的断言负责兜底,
+# 确认装进来的确实带 int64 修复。上游合入后:删掉 builder 里那两行 + 本断言。
 
 # 构建期断言:cu13 / comfy-kitchen CUDA 后端未被禁 / sage 可导入 / int64 补丁在位。
 # comfy-kitchen 的禁用逻辑只看 torch.version.cuda(静态值),无 GPU 也能验。

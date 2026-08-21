@@ -1,0 +1,11 @@
+Metadata-Version: 2.4
+Name: comfyagent
+Version: 0.2.0
+Summary: 把 ComfyUI 工作流封装成 AI agent 可直接调用的接口(RunPod serverless)
+Requires-Python: >=3.11
+Requires-Dist: PyYAML>=6.0
+Provides-Extra: mcp
+Requires-Dist: mcp>=1.0; extra == "mcp"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0; extra == "dev"
+Requires-Dist: pytest-subtests>=0.12; extra == "dev"
