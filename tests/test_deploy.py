@@ -41,6 +41,9 @@ class FakeClient:
         self.calls.append(("update_endpoint", endpoint_id, fields))
         return {"id": endpoint_id}
 
+    def assert_gpu_tiers_ok(self, endpoint_id):
+        self.calls.append(("assert_gpu_tiers_ok", endpoint_id))
+
 
 class TestSpec(unittest.TestCase):
     def test_repo_spec_loads_and_merges_defaults(self):
@@ -65,6 +68,7 @@ class TestApply(unittest.TestCase):
         self.spec = {
             "image": "ghcr.io/x/y:1", "gpu_type_ids": ["NVIDIA H100 80GB HBM3"],
             "workers_min": 0, "workers_max": 2, "flashboot": True,
+            "idle_timeout": 5,
             "min_cuda_version": "13.0", "scaler_type": "QUEUE_DELAY",
             "scaler_value": 4, "container_disk_gb": 80,
             "execution_timeout_ms": 1800000, "env": {"A": "1"},
@@ -77,7 +81,8 @@ class TestApply(unittest.TestCase):
             r = deploy_mod.apply("demo", self.spec, client=c)
         self.assertEqual(r["endpoint_id"], "ep-new")
         kinds = [x[0] for x in c.calls]
-        self.assertEqual(kinds, ["create_template", "create_endpoint"])
+        self.assertEqual(kinds, ["create_template", "create_endpoint",
+                                 "assert_gpu_tiers_ok"])
 
     def test_updates_when_present(self):
         """幂等:同名资源已存在时走 PATCH,不再造第二套。"""
@@ -88,7 +93,7 @@ class TestApply(unittest.TestCase):
             r = deploy_mod.apply("demo", self.spec, client=c)
         self.assertEqual(r["endpoint_id"], "ep-1")
         self.assertEqual([x[0] for x in c.calls],
-                         ["update_template", "update_endpoint"])
+                         ["update_template", "update_endpoint", "assert_gpu_tiers_ok"])
 
     def test_underscore_name_maps_to_dash_resource(self):
         c = FakeClient()
@@ -107,7 +112,7 @@ class TestApply(unittest.TestCase):
             r = deploy_mod.apply("demo", spec, client=c)
         self.assertEqual(r["endpoint_id"], "ep-old")
         self.assertEqual([x[0] for x in c.calls],
-                         ["update_template", "update_endpoint"])
+                         ["update_template", "update_endpoint", "assert_gpu_tiers_ok"])
 
     def test_standing_billing_needs_explicit_flag(self):
         spec = dict(self.spec, workers_min=1)
