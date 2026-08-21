@@ -1,6 +1,7 @@
 """核心逻辑的回归测试:参数渲染与工作流声明校验。"""
 
 import base64
+import json
 import sys
 import tempfile
 import unittest
@@ -124,3 +125,57 @@ class TestImageParam(unittest.TestCase):
     def test_non_image_workflow_payload_has_no_images_key(self):
         payload, _ = self.wfs["sdxl_turbo"].build_payload({"prompt": "cat"})
         self.assertNotIn("images", payload)
+
+
+class TestImagesParam(unittest.TestCase):
+    """images 类型(可变张数参考图):按张数克隆槽位节点并接线。"""
+
+    def setUp(self):
+        self.wfs = load_workflows(ROOT / "workflows")
+        self.tmp = tempfile.TemporaryDirectory()
+        self.a = Path(self.tmp.name) / "a.png"
+        self.b = Path(self.tmp.name) / "b.png"
+        self.a.write_bytes(b"\x89PNG\r\n\x1a\nAAA")
+        self.b.write_bytes(b"\x89PNG\r\n\x1a\nBBB")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _build(self, paths):
+        return self.wfs["h3_r2v"].build_payload(
+            {"ref_images": [str(p) for p in paths], "prompt": "<Picture 1> x"})
+
+    def test_slot_count_matches_image_count(self):
+        for n, paths in ((1, [self.a]), (2, [self.a, self.b])):
+            with self.subTest(n=n):
+                payload, _ = self._build(paths)
+                g = payload["workflow"]
+                keys = [k for k in g["136"]["inputs"] if k.startswith("ref_images.")]
+                self.assertEqual(len(keys), n)
+                self.assertEqual(len(payload["images"]), n)
+                # 每个槽位都接到一个真实存在的 LoadImage 节点
+                for k in keys:
+                    node_id = g["136"]["inputs"][k][0]
+                    self.assertEqual(g[node_id]["class_type"], "LoadImage")
+
+    def test_no_dangling_refs_or_leftover_template(self):
+        g = self._build([self.a, self.b])[0]["workflow"]
+        ids = set(g)
+        for nid, node in g.items():
+            for k, v in node["inputs"].items():
+                if isinstance(v, list) and len(v) == 2 and isinstance(v[0], str):
+                    self.assertIn(v[0], ids, f"{nid}.{k} 指向不存在的节点")
+        self.assertNotIn("REF_IMAGE_SLOT_TEMPLATE", json.dumps(g))
+
+    def test_same_image_uploaded_once(self):
+        payload, _ = self._build([self.a, self.b, self.a])
+        self.assertEqual(len(payload["images"]), 2)          # 去重
+        g = payload["workflow"]
+        keys = [k for k in g["136"]["inputs"] if k.startswith("ref_images.")]
+        self.assertEqual(len(keys), 3)                        # 但槽位仍是 3 个
+
+    def test_rejects_empty_and_overflow(self):
+        with self.assertRaises(ParamError):
+            self._build([])
+        with self.assertRaises(ParamError):
+            self._build([self.a] * 10)

@@ -298,6 +298,10 @@ def main(argv=None):
                     # agent 会传 --xx true/false 字符串;拼错必须报错,不能静默当 false
                     kw["type"] = _parse_bool
                     kw["metavar"] = "true|false"
+                elif spec.type == "images":
+                    # 可变张数:--ref-images a.png b.png c.png(顺序即 <Picture N> 编号)
+                    kw["nargs"] = "+"
+                    kw["metavar"] = "图片路径"
                 if spec.enum:
                     kw["choices"] = spec.enum
                 sub_run.add_argument(f"--{name.replace('_', '-')}", **kw)
