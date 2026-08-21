@@ -1,0 +1,58 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+    paths-ignore: ["docs/**", "*.md"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.lock
+          pip install -e .
+
+      - name: Tests
+        run: pytest -q
+
+      # 启动路径的语法错误只会在线上爆炸(CMD 构建期不执行),这里当门禁拦住。
+      - name: Syntax check (worker + scripts)
+        run: |
+          python -m compileall -q comfyagent worker scripts
+          bash -n worker/src/start.sh
+
+      - name: Workflow definitions load
+        run: |
+          python -c "
+          from pathlib import Path
+          from comfyagent.core.registry import load_workflows
+          wfs = load_workflows(Path('workflows'))
+          assert wfs, '没有加载到任何工作流'
+          print('loaded:', sorted(wfs))
+          "
+
+      # 部署声明必须能解析,且不含持续计费配置(workers_min>0 需人工确认)
+      - name: Deployment spec sanity
+        run: |
+          python -c "
+          from comfyagent.core.deploy import load_spec
+          specs = load_spec()
+          for name, s in specs.items():
+              assert s.get('image'), f'{name} 缺 image'
+              assert s.get('workers_min', 0) == 0, f'{name} workers_min>0 会持续计费'
+          print('deployments OK:', sorted(specs))
+          "

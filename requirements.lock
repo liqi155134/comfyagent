@@ -1,0 +1,17 @@
+# CLI/MCP 侧的已验证版本组合(2026-08-21,Python 3.11 实测通过)。
+#
+# 这是"能跑起来的确定组合",不是解析出来的全量图 —— comfyagent 本体只依赖
+# PyYAML(其余走标准库),mcp 仅 MCP server 入口需要,测试侧两项。
+# worker 容器里的依赖是另一套,由 docker/h3.Dockerfile 钉死,不在这里。
+#
+# 安装:pip install -r requirements.lock
+#      或最小集:pip install "PyYAML>=6.0"
+
+PyYAML==6.0.3
+
+# MCP server 入口(python -m comfyagent.mcp_server)才需要
+mcp==2.0.0
+
+# 测试
+pytest==9.1.1
+pytest-subtests==0.14.2

@@ -123,7 +123,8 @@ class RunpodClient:
 
     def create_endpoint(self, name, template_id, gpu_type_ids, workers_min=0,
                         workers_max=1, idle_timeout=5, flashboot=True,
-                        execution_timeout_ms=None, allowed_cuda=None):
+                        execution_timeout_ms=None, allowed_cuda=None,
+                        min_cuda_version=None, scaler_type=None, scaler_value=None):
         _check_gpu_types(gpu_type_ids)
         body = {
             "name": name,
@@ -137,8 +138,16 @@ class RunpodClient:
         }
         if execution_timeout_ms:
             body["executionTimeoutMs"] = execution_timeout_ms
+        # allowedCudaVersions 是精确匹配且枚举有上限(实测传 "13.1" 直接 400);
+        # 要表达"13.0 及以上"必须用 minCudaVersion。
         if allowed_cuda:
             body["allowedCudaVersions"] = allowed_cuda
+        if min_cuda_version:
+            body["minCudaVersion"] = min_cuda_version
+        if scaler_type:
+            body["scalerType"] = scaler_type
+        if scaler_value is not None:
+            body["scalerValue"] = scaler_value
         return _request(f"{REST}/endpoints", self.key, "POST", body)
 
     def endpoint_gpu_tiers(self, endpoint_id):

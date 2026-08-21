@@ -1,0 +1,33 @@
+[project]
+name = "comfyagent"
+version = "0.2.0"
+description = "把 ComfyUI 工作流封装成 AI agent 可直接调用的接口(RunPod serverless)"
+requires-python = ">=3.11"
+# 刻意保持极简:除 YAML 解析与 MCP 协议外全部走标准库(urllib/sqlite3),
+# 这样容器里、裸机上、别人的 venv 里都能直接跑,不用先解一堆依赖。
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.0"]
+dev = [
+    "pytest>=8.0",
+    "pytest-subtests>=0.12",
+]
+
+[project.scripts]
+comfyagent = "comfyagent.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["comfyagent", "comfyagent.core"]
+
+[tool.setuptools.package-data]
+comfyagent = ["../workflows/*.yaml", "../workflows/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

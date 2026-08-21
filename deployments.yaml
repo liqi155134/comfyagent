@@ -1,0 +1,54 @@
+# 部署单元声明:一个逻辑名 = 一个 RunPod template + endpoint 的完整配置。
+#
+# 这是"从零重建生产环境"的唯一事实来源 —— `comfyagent deploy <name>` 读它,
+# 幂等地创建或更新 template/endpoint,并把结果写进 ~/.config/comfyagent/endpoints.json。
+#
+# 凭据不在这里:BUCKET_* 从 ~/.config/comfyagent/r2_env 读取(env_from_r2: true),
+# RUNPOD_API_KEY 从 ~/.config/comfyagent/env 读取。两者都不进 git。
+
+defaults:
+  gpu_type_ids: ["NVIDIA H100 80GB HBM3"]
+  workers_min: 0          # 持续计费红线:非 0 必须显式写在具体条目里并说明理由
+  workers_max: 2
+  flashboot: true
+  min_cuda_version: "13.0"
+  scaler_type: QUEUE_DELAY
+  scaler_value: 4
+  container_disk_gb: 80
+  execution_timeout_ms: 1800000   # 30 分钟;超时只是止损上限,不产生额外费用
+
+deployments:
+  h3:
+    description: >
+      MiniMax H3 主力端点:sage attention(int64 补丁已烤进 h3-8 镜像)。
+      t2v 与 i2v 默认都走这里。
+    image: ghcr.io/liqi155134/comfyagent:h3-8
+    env_from_r2: true
+    env:
+      COMFY_LOG_LEVEL: INFO
+      HF_FETCH_REPO: LIQI5134/minimax-h3-t2v
+      USE_SAGE_ATTENTION: "true"
+    workers_max: 2
+
+  h3_ck:
+    description: >
+      comfy-kitchen int8 attention 备选:对全精度忠实度最高
+      (首帧 MAD 1.77/255 vs sage 6.80),代价是 i2v 慢约 49%。
+      出对比素材或怀疑 sage 数值问题时切到这里。
+    image: ghcr.io/liqi155134/comfyagent:h3-8
+    env_from_r2: true
+    env:
+      COMFY_LOG_LEVEL: INFO
+      HF_FETCH_REPO: LIQI5134/minimax-h3-t2v
+      USE_CK_ATTENTION: "true"
+    workers_max: 2
+
+  smoke:
+    description: SDXL Turbo 冒烟端点,模型烤在镜像里,用于验证框架链路本身。
+    image: ghcr.io/liqi155134/comfyagent:smoke-1
+    env_from_r2: true
+    env:
+      COMFY_LOG_LEVEL: INFO
+    workers_max: 1
+    container_disk_gb: 30
+    execution_timeout_ms: 600000

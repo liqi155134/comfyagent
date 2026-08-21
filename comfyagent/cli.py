@@ -215,6 +215,26 @@ def cmd_endpoints(args):
         or "(还没有登记任何部署单元)")
 
 
+def cmd_deploy(args):
+    from .core import deploy as deploy_mod
+    specs = deploy_mod.load_spec(args.spec)
+    names = [args.name] if args.name else sorted(specs)
+    unknown = [n for n in names if n not in specs]
+    if unknown:
+        raise deploy_mod.DeployError(
+            f"部署声明里没有 {unknown};可用: {sorted(specs)}")
+
+    results = []
+    client = None if args.dry_run else RunpodClient()
+    for n in names:
+        r = deploy_mod.apply(n, specs[n], client=client,
+                             allow_billing=args.allow_billing, dry_run=args.dry_run)
+        results.append({"name": n, **r})
+    _emit(results, args.json, lambda rs: "\n".join(
+        f"{r['name']:8} {r['action']:38} "
+        f"{r.get('endpoint_id') or r.get('image', '')}" for r in rs))
+
+
 def build_parser():
     p = argparse.ArgumentParser(
         prog="comfyagent",
@@ -240,6 +260,13 @@ def build_parser():
     j.add_argument("--limit", type=int, default=20)
 
     sub.add_parser("endpoints", help="查看部署单元状态")
+
+    d = sub.add_parser("deploy", help="按 deployments.yaml 创建/更新部署单元(幂等)")
+    d.add_argument("name", nargs="?", help="部署单元名;省略则全部")
+    d.add_argument("--spec", metavar="路径", help="部署声明文件(默认仓库根 deployments.yaml)")
+    d.add_argument("--dry-run", action="store_true", help="只打印计划,不碰 RunPod")
+    d.add_argument("--allow-billing", action="store_true",
+                   help="允许 workers_min>0 这类持续计费配置")
     return p
 
 
@@ -293,13 +320,18 @@ def main(argv=None):
     args = parser.parse_args(argv)
     try:
         return {"list": cmd_list, "query": cmd_query, "jobs": cmd_jobs,
-                "endpoints": cmd_endpoints}[args.cmd](args) or 0
+                "endpoints": cmd_endpoints, "deploy": cmd_deploy}[args.cmd](args) or 0
     except RunpodError as e:
         print(f"RunPod 调用失败: {e}", file=sys.stderr)
         return 3
     except (WorkflowError, KeyError) as e:
         print(f"配置错误: {e}", file=sys.stderr)
         return 2
+    except Exception as e:  # DeployError 等
+        if type(e).__name__ == "DeployError":
+            print(f"部署失败: {e}", file=sys.stderr)
+            return 2
+        raise
 
 
 if __name__ == "__main__":
