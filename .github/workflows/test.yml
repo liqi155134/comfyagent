@@ -52,11 +52,15 @@ jobs:
           python -m pip wheel --no-deps -w /tmp/wh .
           python -m venv /tmp/wv
           /tmp/wv/bin/pip install -q PyYAML /tmp/wh/comfyagent-*.whl
+          # 必须离开仓库根再导入:否则 cwd 里的源码目录会顶掉刚装的 wheel,
+          # 这个测试就变成了自测源码(2026-08-21 复核指出的假隔离)。
+          cd /tmp
           /tmp/wv/bin/python -c "
-          from comfyagent.core.deploy import load_spec
-          specs = load_spec()
+          import comfyagent.core.deploy as d
+          assert '/tmp/wv/' in d.__file__, f'导入的不是 wheel 里的模块: {d.__file__}'
+          specs = d.load_spec()
           assert specs, '正式 wheel 里读不到部署声明'
-          print('wheel 自包含 OK:', sorted(specs))
+          print('wheel 自包含 OK:', d.__file__, sorted(specs))
           "
 
       # 部署声明必须能解析,且不含持续计费配置(workers_min>0 需人工确认)

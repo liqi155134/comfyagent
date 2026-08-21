@@ -129,3 +129,44 @@ class TestApply(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestNoDrift(unittest.TestCase):
+    """deploy 必须把声明里的每个端点字段都推到现网。
+
+    漏推的字段会造成"改了声明却不生效"的静默漂移(实际发生过:gpuTypeIds、
+    idleTimeout 漏推,现网 idle 停在 10 秒而声明是 5)。
+    """
+
+    # 声明字段 -> RunPod API 字段
+    MUST_PUSH = {
+        "gpu_type_ids": "gpuTypeIds",
+        "workers_min": "workersMin",
+        "workers_max": "workersMax",
+        "idle_timeout": "idleTimeout",
+        "flashboot": "flashboot",
+        "execution_timeout_ms": "executionTimeoutMs",
+        "min_cuda_version": "minCudaVersion",
+        "scaler_type": "scalerType",
+        "scaler_value": "scalerValue",
+    }
+
+    def test_update_pushes_every_declared_field(self):
+        c = FakeClient(templates=[{"id": "tpl-1", "name": "comfyagent-demo"}],
+                       endpoints=[{"id": "ep-1", "name": "comfyagent-demo"}])
+        spec = {
+            "image": "ghcr.io/x/y:1", "gpu_type_ids": ["NVIDIA H100 80GB HBM3"],
+            "workers_min": 0, "workers_max": 2, "flashboot": True,
+            "idle_timeout": 5, "min_cuda_version": "13.0",
+            "scaler_type": "QUEUE_DELAY", "scaler_value": 4,
+            "container_disk_gb": 80, "execution_timeout_ms": 1800000, "env": {},
+        }
+        with tempfile.TemporaryDirectory() as d:
+            deploy_mod.config.PATH = Path(d) / "endpoints.json"
+            deploy_mod.apply("demo", spec, client=c)
+
+        pushed = next(x[2] for x in c.calls if x[0] == "update_endpoint")
+        for decl, api in self.MUST_PUSH.items():
+            with self.subTest(field=decl):
+                self.assertIn(api, pushed, f"{decl} 没有推到现网,会造成静默漂移")
+                self.assertEqual(pushed[api], spec[decl])

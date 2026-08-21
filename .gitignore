@@ -7,3 +7,7 @@ venv/
 .DS_Store
 .history/
 /outputs/
+# 构建产物(pip wheel / setuptools 生成)
+/build/
+/dist/
+*.egg-info/

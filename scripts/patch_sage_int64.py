@@ -26,14 +26,29 @@ if not os.path.isfile(p):
     print(f"patch_sage_int64: FATAL - 目标文件不存在: {p}", flush=True)
     sys.exit(1)
 src = open(p).read()
-if ".to(tl.int64)" in src:
-    print(f"patch_sage_int64: already patched: {p}", flush=True)
+
+# 脆弱写法:行偏移在 int32 域相乘。判据是"还剩几处",不是"有没有出现过 int64" ——
+# 后者在部分打过补丁的源码上会误判为已修完,漏掉剩下的(2026-08-21 复核指出)。
+VULNERABLE = re.compile(r"offs_n(\d?)\[:, None\] \* stride_(in|on)")
+before = len(VULNERABLE.findall(src))
+already = src.count(".to(tl.int64)")
+
+if before == 0:
+    if already == 0:
+        print(f"patch_sage_int64: FATAL - 一处脆弱写法都没找到,源码结构变了? {p}", flush=True)
+        sys.exit(1)
+    print(f"patch_sage_int64: already patched ({already} 处 int64,0 处脆弱): {p}", flush=True)
     sys.exit(0)
 
-pat = re.compile(r"offs_n(\d?)\[:, None\] \* stride_(in|on)")
-patched, n = pat.subn(r"offs_n\1.to(tl.int64)[:, None] * stride_\2", src)
+patched, n = VULNERABLE.subn(r"offs_n\1.to(tl.int64)[:, None] * stride_\2", src)
 if n < 4:
-    print(f"patch_sage_int64: FATAL - only {n} sites replaced, source layout changed?", flush=True)
+    print(f"patch_sage_int64: FATAL - 只替换了 {n} 处,源码结构变了?", flush=True)
     sys.exit(1)
+
+# 落盘后回读断言:必须一处脆弱写法都不剩
 open(p, "w").write(patched)
-print(f"patch_sage_int64: patched {n} sites in {p}", flush=True)
+after = len(VULNERABLE.findall(open(p).read()))
+if after != 0:
+    print(f"patch_sage_int64: FATAL - 补完仍剩 {after} 处脆弱写法", flush=True)
+    sys.exit(1)
+print(f"patch_sage_int64: patched {n} sites, 0 vulnerable left in {p}", flush=True)
