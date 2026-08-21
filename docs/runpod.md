@@ -32,7 +32,8 @@ runpodctl v2.9.0 无 logs 命令、GraphQL 无对应字段——只有这套 v2 
 5. GHCR public 镜像 RunPod 直接可拉,无需 registry 凭据;单层压缩后 10GB 上限,模型层压缩率实测 91.2%(20GB 单文件模型必超限)。
 6. RunPod GitHub 构建:30 分钟 docker build 硬上限(smoke 镜像 26m34s 已占 88%)、镜像总量 ≤80GB、构建期无 GPU。
 7. **FlashBoot 快照恢复不重跑 `dockerStartCmd`**(2026-08-20 实测):启动命令里 wget 的脚本在快照恢复的容器里是旧版;踢 `workersMax` 0→1 换不掉。强制新容器要**改 template**(如 env 加版本号)使快照失效。反之,启动时打的运行时补丁(文件系统改动)会随快照保留——利用这点,"启动链打补丁"模式(如 patch_sage_int64)与 FlashBoot 兼容。
-8. **CUDA illegal memory access 会废掉整个 CUDA context**:同 worker 的后续 job 连带失败(症状飘忽)。崩溃类探针必须每 case 独立 job,崩一次就换 worker;偶发 illegal access 别急着归因宿主机瞬态(sage int32 溢出 bug 曾被这么误判)。
+8. **删 template 报 500 "active pods currently using it" 未必真有 Pod**:serverless worker 在 RunPod 内部也算 pod,引用回收有延迟,旧 template 可能挂着已销毁 worker 的陈旧引用。**先用两套 API 交叉确认**(`GET /v1/pods` 与 GraphQL `myself { pods }`)再决定是否要排查计费;都返回空就是平台侧残留,template 本身不计费,放着即可。
+9. **CUDA illegal memory access 会废掉整个 CUDA context**:同 worker 的后续 job 连带失败(症状飘忽)。崩溃类探针必须每 case 独立 job,崩一次就换 worker;偶发 illegal access 别急着归因宿主机瞬态(sage int32 溢出 bug 曾被这么误判)。
 
 ## Model caching(2026-08-19 结论:小模型可用,44GB 级实测卡死)
 
