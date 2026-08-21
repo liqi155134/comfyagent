@@ -123,7 +123,15 @@ COPY --from=sage-builder /sage/dist/*.whl /tmp/wheels/
 RUN uv pip install --no-cache runpod requests websocket-client boto3 hf_transfer /tmp/wheels/*.whl \
     && rm -rf /tmp/wheels
 
-# 构建期断言:cu13 / comfy-kitchen CUDA 后端未被禁 / sage 可导入。
+# sage int32 指针溢出修复(2026-08-20 定论,见 docs/sage-sm90-issue-draft.md):
+# 量化 kernel 的行偏移 offs_n * stride_in 在 int32 域相乘,fused QKV 布局
+# (Q seq-stride=21504)下行号 > 2^31/21504 ≈ 99865 即 wrap 负 → 尾帧塌坏 /
+# illegal memory access。构建期打补丁(此前是启动时 wget,依赖外网且 FlashBoot
+# 快照行为易混淆)。上游合入后删除本步骤即可。
+COPY scripts/patch_sage_int64.py /tmp/patch_sage_int64.py
+RUN python /tmp/patch_sage_int64.py && rm /tmp/patch_sage_int64.py
+
+# 构建期断言:cu13 / comfy-kitchen CUDA 后端未被禁 / sage 可导入 / int64 补丁在位。
 # comfy-kitchen 的禁用逻辑只看 torch.version.cuda(静态值),无 GPU 也能验。
 RUN python -c "\
 import torch, importlib.util; \
@@ -131,6 +139,9 @@ assert torch.__version__.startswith('${TORCH_VERSION}'), f'torch 版本不符: {
 cu = tuple(map(int, str(torch.version.cuda).split('.'))); \
 assert cu >= (13,), f'CUDA 构建不是 cu13: {torch.version.cuda} —— comfy-kitchen CUDA 后端会被禁用'; \
 assert importlib.util.find_spec('sageattention') is not None, 'sageattention 没装上'; \
+import sageattention, pathlib; \
+_qp = pathlib.Path(sageattention.__file__).parent / 'triton' / 'quant_per_thread.py'; \
+assert _qp.read_text().count('.to(tl.int64)') >= 4, 'sage int64 补丁没生效'; \
 assert importlib.util.find_spec('xformers') is None, 'xformers 溜回来了'; \
 import comfy_kitchen; \
 import importlib.metadata as md; \
