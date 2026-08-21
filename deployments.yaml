@@ -44,6 +44,22 @@ deployments:
       USE_CK_ATTENTION: "true"
     workers_max: 2
 
+  h3_r2v:
+    description: >
+      MiniMax H3 参考生视频(ref2va 权重 + ref2v 4step turbo LoRA)。
+      与 h3/h3_ck 是**不同的 UNET**,所以单列端点;直接从官方多变体 repo
+      按 pattern 取需要的 44.4GB,不再自建精简 repo。
+      sage int64 补丁同样是刚需 —— ref2va 也是 fused QKV 布局、序列过 10 万。
+    image: ghcr.io/liqi155134/comfyagent:h3-10
+    env_from_r2: true
+    env:
+      COMFY_LOG_LEVEL: INFO
+      HF_FETCH_REPO: Comfy-Org/MiniMax-H3
+      HF_FETCH_PATTERNS: >-
+        diffusion_models/minimax_h3_ref2va_pruned_int8_convrot.safetensors;loras/minimax_h3_ref2v_turbo_4step_v0.1_comfyui_bf16.safetensors;vae/minimax_h3_video_vae_fp16.safetensors;vae/minimax_h3_audio_vae_fp32.safetensors;text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors
+      USE_SAGE_ATTENTION: "true"
+    workers_max: 1
+
   smoke:
     description: SDXL Turbo 冒烟端点,模型烤在镜像里,用于验证框架链路本身。
     # 现存资源叫 comfyagent-smoke3(历史命名),不加这行 deploy 会另建一套
