@@ -97,6 +97,18 @@ class TestApply(unittest.TestCase):
             deploy_mod.apply("h3_ck", self.spec, client=c)
         self.assertEqual(c.calls[0][1], "comfyagent-h3-ck")
 
+    def test_resource_name_override_finds_legacy_resource(self):
+        """历史遗留的异名资源:用 resource_name 指过去,走更新而不是重建。"""
+        c = FakeClient(templates=[{"id": "tpl-old", "name": "comfyagent-demo-legacy"}],
+                       endpoints=[{"id": "ep-old", "name": "comfyagent-demo-legacy"}])
+        spec = dict(self.spec, resource_name="comfyagent-demo-legacy")
+        with tempfile.TemporaryDirectory() as d:
+            deploy_mod.config.PATH = Path(d) / "endpoints.json"
+            r = deploy_mod.apply("demo", spec, client=c)
+        self.assertEqual(r["endpoint_id"], "ep-old")
+        self.assertEqual([x[0] for x in c.calls],
+                         ["update_template", "update_endpoint"])
+
     def test_standing_billing_needs_explicit_flag(self):
         spec = dict(self.spec, workers_min=1)
         with self.assertRaises(deploy_mod.DeployError) as cm:

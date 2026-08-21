@@ -79,6 +79,7 @@ def plan(name, spec):
     env_keys = sorted(_build_env(spec).keys())
     return {
         "name": name,
+        "resource_name": spec.get("resource_name") or f"comfyagent-{name.replace('_', '-')}",
         "image": spec["image"],
         "gpu_type_ids": spec["gpu_type_ids"],
         "workers": f"{spec['workers_min']}-{spec['workers_max']}",
@@ -98,7 +99,9 @@ def apply(name, spec, client=None, allow_billing=False, dry_run=False):
         return {"action": "dry-run", **plan(name, spec)}
 
     client = client or RunpodClient()
-    res_name = f"comfyagent-{name.replace('_', '-')}"
+    # 资源名默认由逻辑名推导;历史遗留的异名资源用 resource_name 显式指过去,
+    # 否则 deploy 会当成"不存在"再造一套(实测踩过:h3 vs comfyagent-h3-sagefix)。
+    res_name = spec.get("resource_name") or f"comfyagent-{name.replace('_', '-')}"
     env = _build_env(spec)
 
     tpl = _find_by_name(client.list_templates(), res_name)
