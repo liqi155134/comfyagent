@@ -45,6 +45,8 @@ deployments:
 
   smoke:
     description: SDXL Turbo 冒烟端点,模型烤在镜像里,用于验证框架链路本身。
+    # 现存资源叫 comfyagent-smoke3(历史命名),不加这行 deploy 会另建一套
+    resource_name: comfyagent-smoke3
     image: ghcr.io/liqi155134/comfyagent:smoke-1
     env_from_r2: true
     env:
