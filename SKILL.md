@@ -8,8 +8,22 @@
 | 项 | 位置 | 说明 |
 |---|---|---|
 | RunPod API key | `~/.config/comfyagent/env` | `RUNPOD_API_KEY=...`,权限 600 |
-| 部署单元登记表 | `~/.config/comfyagent/endpoints.json` | 逻辑名 → endpoint_id;重建 endpoint 只改这里 |
+| R2 凭据 | `~/.config/comfyagent/r2_env` | `BUCKET_*` 四件套,deploy 时注入 endpoint |
+| 部署声明 | `deployments.yaml`(仓库内) | 端点配置的事实来源,`deploy` 命令读它 |
+| 部署单元登记表 | `~/.config/comfyagent/endpoints.json` | 逻辑名 → endpoint_id,由 `deploy` 自动写 |
+| 依赖 | `requirements.lock` | `pip install -r requirements.lock && pip install -e .` |
 | 运行目录 | `/workspace/comfyagent` | CLI 以 `python3 -m comfyagent.cli` 运行 |
+
+**从零重建生产环境**(换台机器 / 端点被误删时):
+
+```bash
+python3 -m comfyagent.cli deploy --dry-run   # 先看计划
+python3 -m comfyagent.cli deploy             # 全部创建/更新(幂等,可反复跑)
+python3 -m comfyagent.cli deploy h3          # 只处理一个
+```
+
+幂等:同名资源存在就 PATCH,不会造出第二套。`workers_min>0`(持续计费)会被
+拒绝执行,需显式 `--allow-billing`。
 
 调用前 `set -a; source ~/.config/comfyagent/env; set +a`(或让 shell 已带该 env)。
 

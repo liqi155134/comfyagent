@@ -15,3 +15,8 @@ mcp==2.0.0
 # 测试
 pytest==9.1.1
 pytest-subtests==0.14.2
+
+# tests/test_handler.py 直接 import worker/handler.py,于是需要 worker 侧的
+# 这两个依赖(容器里由 Dockerfile 装,本地/CI 得显式列出)。
+requests==2.33.1
+websocket-client==1.9.0
